@@ -1,0 +1,29 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_favourite"
+        app:showAsAction="always"
+        android:icon="@drawable/heart"
+        android:title="Users"/>
+
+    <item
+        android:id="@+id/action_userList"
+        app:showAsAction="always"
+        android:icon="@drawable/userlist2"
+        android:title="Users"/>
+
+    <item
+        android:id="@+id/action_exit"
+        app:showAsAction="always"
+        android:icon="@drawable/exit"
+        android:title="Users"/>
+
+    <item
+        android:id="@+id/action_smile"
+        app:showAsAction="always"
+        android:icon="@drawable/smile"
+        android:title="Users"/>
+
+    </menu>
+

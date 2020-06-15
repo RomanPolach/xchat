@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Xchat2</string>
+    <string name="login_btn_title">Přihlášení</string>
+    <string name="room_list_title">Výpis místností</string>
+    <string name="favourite_rooms_title">Oblíbené místnosti</string>
+    <string name="action_sign_in">Přihlásit se</string>
+    <string name="select_room_title">Výběr místnosti</string>
+    <string name="people_in_room">lidí v místnosti</string>
+    <string name="room_saved">Místnost byla uložena do oblíbených</string>
+    <string name="empty_favourite_title">Nemáš žádné oblíbené místnosti</string>
+    <string name="favourite_rooms_anonymous_title">Pro zobrazení oblíbených místností se musíš přihlásit</string>
+</resources>
