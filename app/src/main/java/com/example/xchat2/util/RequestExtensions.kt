@@ -1,14 +1,14 @@
 package com.example.xchat2.util
 
+import com.example.xchat2.chat.ChatUser
+import com.example.xchat2.chat.Sex
 import com.example.xchat2.ui.main.repos.ChatRepository
 import com.example.xchat2.ui.main.repos.Chatroom
 import org.jsoup.Connection
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import java.io.File
 import java.net.URLDecoder
 import java.util.regex.Matcher
-import java.util.regex.Pattern
 
 fun ChatRepository.createLoginRequest(name: String, password: String) =
     Jsoup.connect("https://www.xchat.cz/login/")
@@ -83,8 +83,8 @@ fun Connection.Response.getRoomHtmlString(): String {
         output = URLDecoder.decode(output, "UTF-8")
         output = output.replace("\\\"", "\"")
         output = output.replace("href=\"https://redi.*?url=".toRegex(), Matcher.quoteReplacement("href=\""))
- //       val patt = Pattern.compile("https://x.ximg.cz.*?gif")
- //       val match = patt.matcher(output)
+        //       val patt = Pattern.compile("https://x.ximg.cz.*?gif")
+        //       val match = patt.matcher(output)
 //        while (match.find()) {
 //            val imageurl = match.group(0)
 //            val imageName = imageurl.substring(imageurl.lastIndexOf("/") + 1)
@@ -101,4 +101,52 @@ fun Connection.Response.getRoomHtmlString(): String {
         r.printStackTrace()
         " "
     }
+}
+
+fun ChatRepository.createRoomExitRequest(hash: String, roomId: Int): Connection {
+    val adr = "https://www.xchat.cz/$hash/modchat?op=mainframeset&menuaction=leave&leftroom=$roomId&js=1&skin=2&cid=16"
+    return Jsoup.connect(adr).timeout(4000)
+}
+
+fun ChatRepository.createGetSendTokenRequest(roomId: Int, token: String): Connection {
+    val url = "https://www.xchat.cz/$token/modchat?op=textpageng&skin=2&rid=$roomId&js=1"
+    return Jsoup.connect(url).timeout(4000)
+}
+
+fun ChatRepository.createSendMessageRequest(message: String, roomId: Int, token: String, sendToken: String): Connection {
+    return Jsoup.connect("https://www.xchat.cz/$token/modchat")
+        .postDataCharset("ISO-8859-2")
+        .userAgent("Mozilla/5.0")
+        .timeout(4000)
+        .method(Connection.Method.POST)
+        .followRedirects(false)
+        .data("op", "textpageng")
+        .data("rid", roomId.toString())
+        .data("aid", "0")
+        .data("js", "1")
+        .data("skin", "2")
+        .data("wtkn", sendToken)
+        .data("textarea", message)
+        .data("target", "~")
+        .data("submit_text", "Poslat")
+}
+
+fun ChatRepository.createGetUserListRequest(roomId: Int, token: String): Connection {
+    val userpageadresa = "https://www.xchat.cz/${token}/modchat?op=userspage&amp;rid=${roomId}&amp;cid=16&amp;js=1&amp;skin=2"
+    return Jsoup.connect(userpageadresa).timeout(5000)
+}
+
+fun Document.getUserList(): List<ChatUser> {
+    val userelem = getElementById("clist")
+    val userselemt = userelem.getElementsByTag("p")
+    return userselemt.map {
+        val name = it.text().trim()
+        val pohlavi = if (it.html().toLowerCase().contains("muž")) Sex.MUZ else Sex.ZENA
+        ChatUser(name, pohlavi)
+    }.toList()
+}
+
+fun ChatRepository.createGetRoomInfoRequest(roomId: Int, token: String): Connection {
+    val infoPageAddress = "https://www.xchat.cz/${token}/modchat?op=infopage&skin=2&rid=${roomId}"
+    return Jsoup.connect(infoPageAddress).timeout(5000)
 }

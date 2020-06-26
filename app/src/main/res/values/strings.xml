@@ -9,4 +9,9 @@
     <string name="room_saved">Místnost byla uložena do oblíbených</string>
     <string name="empty_favourite_title">Nemáš žádné oblíbené místnosti</string>
     <string name="favourite_rooms_anonymous_title">Pro zobrazení oblíbených místností se musíš přihlásit</string>
+    <string name="anonymous_user_error">Nejsi přihlášený</string>
+    <string name="users_in_room">Uživatelé v místnosti:</string>
+    <string name="admin_title">Správce:</string>
+    <string name="idle_time_title">Nemluvil jsi:</string>
+    <string name="room_exit_failed">Opuštění místnosti se nezdařilo</string>
 </resources>

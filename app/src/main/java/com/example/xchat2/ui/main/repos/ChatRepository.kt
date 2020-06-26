@@ -1,18 +1,19 @@
 package com.example.xchat2.ui.main.repos
 
-import android.view.View
+import com.example.xchat2.chat.ChatBottomSheetState
 import com.example.xchat2.util.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import org.jsoup.Jsoup
+import kotlin.String
 
 /**
  * Repository for chat
  */
 interface ChatRepository {
-    fun login(name: String, password: String): Flow<State<User>>
+    fun login(name: kotlin.String, password: kotlin.String): Flow<State<User>>
 
     fun tryLoginWithSavedInfo(): Flow<State<User>>
 
@@ -20,17 +21,27 @@ interface ChatRepository {
 
     fun enterChatroom(chatroom: Chatroom): Flow<State<Unit>>
 
-    fun subscribeRoomContent(chatroom: Chatroom): Flow<State<ChatRoomContent>>
+    fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>>
 
     fun saveRoomToFavourites(selectedRoom: Chatroom): Flow<Long>
 
     fun getFavouriteRooms(): Flow<FavouriteRoomsState>
+
+    suspend fun getSendToken(roomId: Int)
+
+    suspend fun sendMessage(message: kotlin.String, roomId: Int): Flow<State<Unit>>
+
+    fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>>
+
+    fun exitRoom(selectedRoom: Chatroom): Flow<State<Unit>>
 }
 
 class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
+    private var sendToken: kotlin.String = ""
+
     @Suppress("BlockingMethodInNonBlockingContext")
-    override fun login(name: String, password: String): Flow<State<User>> {
+    override fun login(name: kotlin.String, password: kotlin.String): Flow<State<User>> {
         return flow {
             emit(State.Loading)
             val response = createLoginRequest(name, password).execute()
@@ -78,16 +89,16 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         }
     }
 
-    override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<ChatRoomContent>> {
-        val user = userDao.getUser()
+    override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<kotlin.String>> {
 
         return flow {
             do {
+                val user = userDao.getUser()
                 val response = createGetRoomContentRequest(user!!.token, chatroom.id).execute()
                 if (response != null) {
                     val output = response.getRoomHtmlString()
                     if (output.length < 10) emit(State.Error(IllegalAccessError("Room content is shit")))
-                    else if (output.length > 10) emit(State.Loaded(ChatRoomContent(output)))
+                    else if (output.length > 10) emit(State.Loaded(output))
                 } else {
                     emit(State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo")))
                 }
@@ -118,6 +129,65 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 emit(FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getUserFavouriteRooms(user.id)))
             } else {
                 emit(FavouriteRoomsState.AnonymousUser)
+            }
+        }
+    }
+
+    override suspend fun getSendToken(roomId: Int) {
+        val user = userDao.getUser()
+        user?.token?.let {
+            val response = createGetSendTokenRequest(roomId, it).get().toString()
+            sendToken = Regex("wtkn\" value=\"(.*?)[\"]").find(response)?.groupValues?.get(1) ?: ""
+        }
+    }
+
+    override suspend fun sendMessage(message: kotlin.String, roomId: Int): Flow<State<Unit>> {
+        return flow {
+            val user = userDao.getUser()
+            getSendToken(roomId)
+            if (user != null) {
+                val response = createSendMessageRequest(
+                    message = message,
+                    roomId = roomId,
+                    token = user.token,
+                    sendToken = sendToken
+                ).execute()
+                if (response.statusCode() == 200) {
+                    emit(State.Loaded(Unit))
+                } else {
+                    emit(State.Error(IllegalAccessError("Odeslání zprávy selhalo")))
+                }
+            } else {
+                emit(State.Error(AnonymousUserException()))
+            }
+        }
+    }
+
+    override fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>> {
+        return flow {
+            val user = userDao.getUser()
+            user?.let {
+                val userpage = createGetUserListRequest(roomId = roomId, token = user.token).get()
+                val roomInfoPage = createGetRoomInfoRequest(roomId = roomId, token = user.token).get()
+                val pageString = roomInfoPage.toString()
+                val admin = Regex("strong id=\"admin\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
+                val idle = Regex("strong id=\"idle\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
+                val roomInfo = ChatBottomSheetState.RoomInfo(users = userpage.getUserList(), admin = admin, idleTime = idle)
+                emit(State.Loaded(roomInfo))
+            }
+        }
+    }
+
+    override fun exitRoom(selectedRoom: Chatroom): Flow<State<Unit>> {
+        return flow {
+            val user = userDao.getUser()
+            val exitRequest = createRoomExitRequest(user!!.token, selectedRoom.id)
+            val response = exitRequest.execute()
+            if(response.statusCode() == 200) {
+                emit(State.Loaded(Unit))
+            }
+            else {
+                emit(State.Error(IllegalAccessError("Opuštění místnosti selhalo")))
             }
         }
     }

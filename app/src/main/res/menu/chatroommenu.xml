@@ -4,25 +4,25 @@
     <item
         android:id="@+id/action_favourite"
         app:showAsAction="always"
-        android:icon="@drawable/heart"
+        android:icon="@drawable/cards_heart"
         android:title="Users"/>
 
     <item
-        android:id="@+id/action_userList"
+        android:id="@+id/action_info"
         app:showAsAction="always"
-        android:icon="@drawable/userlist2"
+        android:icon="@drawable/ic_info"
         android:title="Users"/>
 
     <item
         android:id="@+id/action_exit"
         app:showAsAction="always"
-        android:icon="@drawable/exit"
+        android:icon="@drawable/ic_exit"
         android:title="Users"/>
 
     <item
         android:id="@+id/action_smile"
         app:showAsAction="always"
-        android:icon="@drawable/smile"
+        android:icon="@drawable/ic_smile"
         android:title="Users"/>
 
     </menu>
