@@ -1,6 +1,5 @@
 package com.example.xchat2.chat
 
-import androidx.lifecycle.ViewModelProviders
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
@@ -9,6 +8,7 @@ import android.view.ViewGroup
 import androidx.lifecycle.Observer
 import com.example.xchat2.MainActivity
 import com.example.xchat2.R
+import com.example.xchat2.ui.main.login.LoginFragment
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.State
 import kotlinx.android.synthetic.main.room_list_fragment.*
@@ -33,12 +33,24 @@ class RoomListFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         epoxyRecyclerView.itemAnimator = null
         viewModel.getRoomList().observe(viewLifecycleOwner, Observer {
-            when (it) {
-                is State.Loaded -> showRooms(it.data)
+            if (it is State.Loaded) {
+                showRooms(it.data)
             }
         })
         toolbar_roomlist.setNavigationOnClickListener {
             activity?.onBackPressed()
+        }
+
+        viewModel.selectedRoom.observe(viewLifecycleOwner, Observer { state ->
+            handleSelectedRoomState(state)
+        })
+    }
+
+    fun handleSelectedRoomState(selectedRoomState: State<SelectedRoomState>) {
+        if (selectedRoomState is State.Loaded && selectedRoomState.data.logged) {
+            openChatroom(selectedRoomState.data.selectedRoom)
+        } else if (selectedRoomState is State.Loaded && !selectedRoomState.data.logged) {
+            openLogin(selectedRoomState.data.selectedRoom)
         }
     }
 
@@ -48,13 +60,23 @@ class RoomListFragment : Fragment() {
                 roomItem {
                     id(it.id)
                     onClick { selectedRoom ->
-                        (activity as MainActivity).replaceFragment(
-                            ChatFragment.newInstance(selectedRoom)
-                        )
+                        viewModel.onRoomClick(selectedRoom)
                     }
                     room(it)
                 }
             }
         }
+    }
+
+    fun openLogin(selectedRoom: Chatroom) {
+        (activity as MainActivity).openFragment(
+            LoginFragment.newInstance(selectedRoom)
+        )
+    }
+
+    fun openChatroom(selectedRoom: Chatroom) {
+        (activity as MainActivity).openFragment(
+            ChatFragment.newInstance(selectedRoom)
+        )
     }
 }

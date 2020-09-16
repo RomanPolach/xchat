@@ -1,4 +1,4 @@
-package com.example.xchat2.ui.main.repos
+package com.example.xchat2.ui.main.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey

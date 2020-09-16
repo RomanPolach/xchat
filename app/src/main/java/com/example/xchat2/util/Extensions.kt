@@ -4,6 +4,7 @@ import android.app.Activity
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 
 
@@ -13,6 +14,10 @@ fun View.setVisible(visible: Boolean) {
     } else {
         visibility = View.GONE
     }
+}
+
+fun Fragment.showToast(message: String) {
+    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
 }
 
 fun TextView.setTextOrHide(text: String?) {

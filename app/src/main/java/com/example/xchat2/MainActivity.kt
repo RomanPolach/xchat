@@ -18,9 +18,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun replaceFragment(fragment: Fragment, name: String = fragment.javaClass.name, addToBackStack: Boolean = true,
-                        transition: Int = FragmentTransaction.TRANSIT_FRAGMENT_OPEN) {
-        val transaction = supportFragmentManager.beginTransaction().replace(R.id.container, fragment, fragment.javaClass.name)
+    fun openFragment(fragment: Fragment, name: String = fragment.javaClass.name, addToBackStack: Boolean = true,
+                     transition: Int = FragmentTransaction.TRANSIT_FRAGMENT_OPEN) {
+        val transaction = supportFragmentManager.beginTransaction().add(R.id.container, fragment, fragment.javaClass.name)
         if (addToBackStack) {
             transaction.addToBackStack(name)
         }

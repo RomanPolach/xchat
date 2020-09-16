@@ -5,8 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.example.xchat2.ui.main.repos.ChatRepository
-import com.example.xchat2.ui.main.repos.ChatRepositoryImpl
-import com.example.xchat2.ui.main.repos.User
+import com.example.xchat2.ui.main.db.User
 import com.example.xchat2.util.State
 import kotlinx.coroutines.Dispatchers
 

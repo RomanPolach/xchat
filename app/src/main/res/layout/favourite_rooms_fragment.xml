@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
+    android:background="@android:color/white"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     tools:context=".ui.main.favourite.FavouriteRoomsFragment">
 
@@ -17,6 +18,12 @@
         app:navigationIcon="@drawable/arrow_left"
         app:title="@string/favourite_rooms_title"
         app:titleTextColor="@android:color/white" />
+
+    <EditText
+        android:id="@+id/edittext_filter"
+        android:layout_width="match_parent"
+        android:hint="@string/hledej_title"
+        android:layout_height="50dp"/>
 
     <com.airbnb.epoxy.EpoxyRecyclerView
         android:id="@+id/epoxy_favourite_rooms"

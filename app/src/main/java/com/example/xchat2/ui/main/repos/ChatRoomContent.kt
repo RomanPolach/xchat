@@ -6,10 +6,11 @@ import com.example.xchat2.util.State
 import kotlin.String
 
 data class ChatRoomContent(
-    val roomHtml: String,
+    val roomHtmlState: State<String>,
     val roomExitState: Event<Boolean?> = Event.createDefaultState(),
     val favouriteRoomSaved: Event<Boolean?> = Event.createDefaultState(),
     val sendingMessageState: Event<Boolean?> = Event.createDefaultState(),
     val retryingTimeout: Event<Boolean?> = Event.createDefaultState(),
-    var chatBottomSheetState: ChatBottomSheetState = ChatBottomSheetState.Closed
+    var chatBottomSheetState: ChatBottomSheetState = ChatBottomSheetState.Closed,
+    val roomUsers: List<String> = emptyList()
 )

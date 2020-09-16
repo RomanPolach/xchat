@@ -1,6 +1,5 @@
 package com.example.xchat2.ui.main
 
-import androidx.lifecycle.ViewModelProviders
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
@@ -14,8 +13,6 @@ import com.example.xchat2.ui.main.favourite.FavouriteRoomsFragment
 import com.example.xchat2.ui.main.login.LoginFragment
 import com.example.xchat2.util.State
 import kotlinx.android.synthetic.main.main_fragment.*
-import org.koin.android.ext.android.getKoin
-import org.koin.android.ext.android.inject
 import org.koin.android.viewmodel.ext.android.viewModel
 
 class MainFragment : Fragment() {
@@ -36,15 +33,15 @@ class MainFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         btnLogin.setOnClickListener {
-            (activity as MainActivity).replaceFragment(LoginFragment.newInstance())
+            (activity as MainActivity).openFragment(LoginFragment.newInstance())
         }
 
         btnRoomList.setOnClickListener {
-            (activity as MainActivity).replaceFragment(RoomListFragment.newInstance())
+            (activity as MainActivity).openFragment(RoomListFragment.newInstance())
         }
 
         btnFavourite.setOnClickListener {
-            (activity as MainActivity).replaceFragment(FavouriteRoomsFragment.newInstance())
+            (activity as MainActivity).openFragment(FavouriteRoomsFragment.newInstance())
         }
 
         viewModel.tryLoginWithSavedInfo().observe(viewLifecycleOwner, Observer {

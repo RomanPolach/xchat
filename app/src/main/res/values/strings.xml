@@ -11,7 +11,11 @@
     <string name="favourite_rooms_anonymous_title">Pro zobrazení oblíbených místností se musíš přihlásit</string>
     <string name="anonymous_user_error">Nejsi přihlášený</string>
     <string name="users_in_room">Uživatelé v místnosti:</string>
+    <string name="send_to_all">Všem></string>
     <string name="admin_title">Správce:</string>
     <string name="idle_time_title">Nemluvil jsi:</string>
     <string name="room_exit_failed">Opuštění místnosti se nezdařilo</string>
+    <string name="unknown_error">Unknown error</string>
+    <string name="login_failed">Přihlášení se nezdařilo</string>
+    <string name="hledej_title">Hledej</string>
 </resources>

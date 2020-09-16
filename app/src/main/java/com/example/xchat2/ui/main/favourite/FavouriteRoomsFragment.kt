@@ -1,7 +1,8 @@
 package com.example.xchat2.ui.main.favourite
 
-import androidx.lifecycle.ViewModelProvider
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
@@ -11,7 +12,6 @@ import com.example.xchat2.MainActivity
 import com.example.xchat2.R
 import com.example.xchat2.chat.ChatFragment
 import com.example.xchat2.chat.roomItem
-import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.ui.main.repos.FavouriteRoomsState
 import com.example.xchat2.util.emptyItem
 import com.example.xchat2.util.header
@@ -38,6 +38,23 @@ class FavouriteRoomsFragment : Fragment() {
         viewModel.getFavouriteRooms().observe(viewLifecycleOwner, Observer { roomState ->
             showRooms(roomState)
         })
+        viewModel.filterRoomsLiveData.observe(viewLifecycleOwner, Observer { roomState ->
+            showRooms(roomState)
+        })
+        edittext_filter.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(filter: Editable?) {
+                filter?.let {
+                        viewModel.setSearchQuery(it.toString())
+                }
+            }
+
+            override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {
+            }
+
+            override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {
+            }
+
+        })
         toolbar_favourite.setNavigationOnClickListener {
             activity?.onBackPressed()
         }
@@ -63,7 +80,7 @@ class FavouriteRoomsFragment : Fragment() {
                         rooms.forEach {
                             roomItem {
                                 onClick { selectedRoom ->
-                                    (activity as MainActivity).replaceFragment(ChatFragment.newInstance(selectedRoom))
+                                    (activity as MainActivity).openFragment(ChatFragment.newInstance(selectedRoom))
                                 }
                                 id(it.id)
                                 room(it)

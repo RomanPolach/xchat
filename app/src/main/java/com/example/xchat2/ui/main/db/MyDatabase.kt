@@ -1,6 +1,5 @@
-package com.example.xchat2.ui.main.repos
+package com.example.xchat2.ui.main.db
 
-import android.app.Application
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
@@ -12,7 +11,7 @@ import androidx.room.RoomDatabase
         UserFavouriteRoom::class
     ], version = 1
 )
-abstract class MyDatabase() : RoomDatabase() {
+abstract class MyDatabase : RoomDatabase() {
 
     abstract fun userDao(): UserDao
 

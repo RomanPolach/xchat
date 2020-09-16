@@ -69,13 +69,13 @@
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_width="0dp"
         android:layout_height="60dp"
+        app:passwordToggleEnabled="true"
         android:layout_marginStart="8dp"
         android:layout_marginTop="38dp"
         android:layout_marginEnd="8dp"
         android:contentDescription="Heslo"
         android:ems="10"
         android:hint="Heslo"
-        android:inputType="textPassword"
         app:boxStrokeColor="@color/colorPrimary"
         app:boxStrokeWidth="2dp"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -87,7 +87,9 @@
 
         <com.google.android.material.textfield.TextInputEditText
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:inputType="textPassword"
+            />
 
     </com.google.android.material.textfield.TextInputLayout>
 

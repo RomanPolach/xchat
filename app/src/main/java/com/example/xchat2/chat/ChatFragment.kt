@@ -3,20 +3,22 @@ package com.example.xchat2.chat
 import android.os.Bundle
 import android.view.*
 import android.view.inputmethod.EditorInfo
+import android.widget.ArrayAdapter
 import android.widget.TextView.OnEditorActionListener
-import android.widget.Toast
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.xchat2.MainActivity
 import com.example.xchat2.R
-import com.example.xchat2.ui.main.repos.AnonymousUserException
+import com.example.xchat2.ui.main.MainFragment
 import com.example.xchat2.ui.main.repos.ChatRoomContent
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.State
 import com.example.xchat2.util.hideKeyboad
+import com.example.xchat2.util.showToast
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import kotlinx.android.synthetic.main.chat_fragment.*
 import kotlinx.android.synthetic.main.layout_bottom_sheet.*
@@ -28,6 +30,9 @@ class ChatFragment : Fragment() {
     private lateinit var selectedRoom: Chatroom
     private lateinit var bottomController: ChatBottomsheetController
     private val viewModel: ChatViewModel by viewModel()
+    private val gridLayoutManager = GridLayoutManager(context, 8)
+    private val linearLayoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+    private var userList: List<String> = emptyList()
 
     companion object {
         val ARGS = "ARGS"
@@ -83,7 +88,6 @@ class ChatFragment : Fragment() {
                     viewModel.onCloseBottomSheetClick()
                 }
             }
-
         })
         bottomController = ChatBottomsheetController(context!!)
         bottomController.onSmileClick = {
@@ -94,9 +98,9 @@ class ChatFragment : Fragment() {
     }
 
     private fun setWebView() {
-        webview.getSettings().setDomStorageEnabled(true)
-        webview.getSettings().setLoadsImagesAutomatically(true)
-        webview.getSettings().setJavaScriptEnabled(true)
+        webview.settings.domStorageEnabled = true
+        webview.settings.loadsImagesAutomatically = true
+        webview.settings.javaScriptEnabled = true
     }
 
     private fun setListeners() {
@@ -132,7 +136,12 @@ class ChatFragment : Fragment() {
 
         textinput.setOnEditorActionListener(OnEditorActionListener { textView, i, keyEvent ->
             if (i == EditorInfo.IME_ACTION_SEND) {
-                viewModel.sendMessage(textinput.text.toString(), selectedRoom.id)
+                if (spinner.selectedItemPosition == 0) {
+                    viewModel.sendMessage(textinput.text.toString(), selectedRoom.id)
+                } else {
+                    val message = "/m ${spinner.selectedItem as String} ${textinput.text}"
+                    viewModel.sendMessage(message, selectedRoom.id)
+                }
                 return@OnEditorActionListener true
             }
             false
@@ -145,8 +154,14 @@ class ChatFragment : Fragment() {
     }
 
     private fun handleRoomState(roomContent: ChatRoomContent) {
-        webview.loadDataWithBaseURL(null, roomContent.roomHtml, "text/html", "ISO-8859-2", null)
-        progressBar.visibility = View.GONE
+        if (roomContent.roomHtmlState is State.Loaded) {
+            webview.loadDataWithBaseURL(null, roomContent.roomHtmlState.data, "text/html", "ISO-8859-2", null)
+            progressBar.visibility = View.GONE
+        } else if (roomContent.roomHtmlState is State.Error) {
+            showToast(roomContent.roomHtmlState.error.message ?: getString(R.string.unknown_error))
+        }
+
+        setUsersAutocomplete(roomContent.roomUsers)
 
         roomContent.favouriteRoomSaved.getContentIfNotHandled()?.let {
             showToast(getString(R.string.room_saved))
@@ -157,28 +172,27 @@ class ChatFragment : Fragment() {
 
         roomContent.roomExitState.getContentIfNotHandled()?.let { success ->
             if (success) {
-                activity?.onBackPressed()
+                (activity as MainActivity).openFragment(MainFragment.newInstance())
             } else {
                 showToast(getString(R.string.room_exit_failed))
             }
         }
 
         bottomController.chatBottomSheetState = roomContent.chatBottomSheetState
-
         when (roomContent.chatBottomSheetState) {
             is ChatBottomSheetState.SmileScreen -> {
                 if (bottomSheetBehavior.state == BottomSheetBehavior.STATE_HIDDEN) {
-                    bottomSheetBehavior.state = BottomSheetBehavior.STATE_HALF_EXPANDED
+                    epoxy_chatroom_bottomsheet.layoutManager = gridLayoutManager
+                    bottomController.requestModelBuild()
+                    bottomSheetBehavior.state = BottomSheetBehavior.STATE_EXPANDED
                 }
-                epoxy_chatroom_bottomsheet.setLayoutManager(GridLayoutManager(context, 8))
-                bottomController.requestModelBuild()
             }
             is ChatBottomSheetState.RoomInfo -> {
                 if (bottomSheetBehavior.state == BottomSheetBehavior.STATE_HIDDEN) {
-                    bottomSheetBehavior.state = BottomSheetBehavior.STATE_HALF_EXPANDED
+                    epoxy_chatroom_bottomsheet.layoutManager = linearLayoutManager
+                    bottomController.requestModelBuild()
+                    bottomSheetBehavior.state = BottomSheetBehavior.STATE_EXPANDED
                 }
-                epoxy_chatroom_bottomsheet.layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
-                bottomController.requestModelBuild()
             }
             is ChatBottomSheetState.Closed -> {
                 bottomSheetBehavior.state = BottomSheetBehavior.STATE_HIDDEN
@@ -194,14 +208,16 @@ class ChatFragment : Fragment() {
         }
     }
 
-    private fun handleError(error: Throwable) {
-        when (error) {
-            is IllegalAccessError -> showToast(error.message ?: "Illegal Access Error")
-            is AnonymousUserException -> showToast(getString(R.string.anonymous_user_error))
-        }
-    }
+    private fun setUsersAutocomplete(users: List<String>) {
+        val adapter = ArrayAdapter(context!!, android.R.layout.simple_dropdown_item_1line, users)
+        textinput.threshold = 2
+        textinput.setAdapter(adapter)
+        textinput.dismissDropDown()
 
-    fun showToast(message: kotlin.String) {
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        if(!userList.equals(users)) {
+            val spinnerAdapter = ArrayAdapter(context!!, android.R.layout.simple_dropdown_item_1line, listOf("Všem") + users.sorted())
+            spinner.adapter = spinnerAdapter
+            userList = users
+        }
     }
 }

@@ -14,15 +14,15 @@
         android:title="Users"/>
 
     <item
-        android:id="@+id/action_exit"
-        app:showAsAction="always"
-        android:icon="@drawable/ic_exit"
-        android:title="Users"/>
-
-    <item
         android:id="@+id/action_smile"
         app:showAsAction="always"
         android:icon="@drawable/ic_smile"
+        android:title="Users"/>
+
+    <item
+        android:id="@+id/action_exit"
+        app:showAsAction="always"
+        android:icon="@drawable/ic_exit"
         android:title="Users"/>
 
     </menu>

@@ -7,7 +7,7 @@ import com.example.xchat2.ui.main.favourite.FavouriteRoomsViewModel
 import com.example.xchat2.ui.main.login.LoginViewModel
 import com.example.xchat2.ui.main.repos.ChatRepository
 import com.example.xchat2.ui.main.repos.ChatRepositoryImpl
-import com.example.xchat2.ui.main.repos.MyDatabase
+import com.example.xchat2.ui.main.db.MyDatabase
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.viewmodel.dsl.viewModel
 import org.koin.dsl.module

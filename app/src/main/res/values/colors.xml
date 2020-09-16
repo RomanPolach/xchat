@@ -7,4 +7,5 @@
     <color name="mainButtons">#57C4E5</color>
     <color name="mainBackground">#EDF2EF</color>
     <color name="semiTransBackground">#33000000</color>
+    <color name="spinnerBackground">#FFE6E2E2</color>
 </resources>
