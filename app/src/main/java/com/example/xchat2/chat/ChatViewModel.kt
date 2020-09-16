@@ -25,9 +25,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel() {
                     delay(3000)
                     cause is UnknownHostException && attempt < 3
                 }
-                .catch {
-                    roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Error(it)))
-                }
                 .filter { it is State.Loaded }
                 .flatMapLatest {
                     chatRepository.subscribeRoomContent(chatroom)
