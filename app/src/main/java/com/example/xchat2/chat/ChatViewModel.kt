@@ -19,39 +19,38 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel() {
     val roomContent = MutableLiveData<ChatRoomContent>(ChatRoomContent(roomHtmlState = State.Idle))
 
     fun enterRoom(chatroom: Chatroom) {
-        viewModelScope.launch(Dispatchers.IO) {
-            chatRepository.enterChatroom(chatroom)
-                .retryWhen { cause, attempt ->
-                    delay(3000)
-                    cause is UnknownHostException && attempt < 3
+        chatRepository.enterChatroom(chatroom)
+            .retryWhen { cause, attempt ->
+                delay(3000)
+                cause is UnknownHostException && attempt < 3
+            }
+            .filter { it is State.Loaded }
+            .flatMapLatest {
+                chatRepository.subscribeRoomContent(chatroom)
+            }
+            .catch {
+                roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Error(it)))
+            }
+            .onEach { content ->
+                if (content is State.Loaded) {
+                    roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Loaded(content.data)))
+                    loadUsers(chatroom.id)
+                } else if (content is State.Error && content.error is IllegalAccessError) {
+                    tryRelogin(chatroom)
+                } else if (content is State.Error) {
+                    roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Error(content.error)))
                 }
-                .filter { it is State.Loaded }
-                .flatMapLatest {
-                    chatRepository.subscribeRoomContent(chatroom)
-                }
-                .catch {
-                    roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Error(it)))
-                }
-                .collect { content ->
-                    if (content is State.Loaded) {
-                        roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Loaded(content.data)))
-                        loadUsers(chatroom.id)
-                    } else if (content is State.Error && content.error is IllegalAccessError) {
-                        tryRelogin(chatroom)
-                    } else if (content is State.Error) {
-                        roomContent.postValue(roomContent.value?.copy(roomHtmlState = State.Error(content.error)))
-                    }
-                }
-        }
+            }
+            .launchIn(viewModelScope)
     }
 
-    private suspend fun loadUsers(roomId: Int) {
+    private fun loadUsers(roomId: Int) {
         chatRepository.getRoomUsers(roomId)
             .catch {
             }
             .onEach {
                 roomContent.postValue(roomContent.value?.copy(roomUsers = it))
-            }.collect()
+            }.launchIn(viewModelScope)
     }
 
     private suspend fun tryRelogin(chatroom: Chatroom) {
@@ -60,37 +59,35 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel() {
     }
 
     fun saveRoomToFavourites(selectedRoom: Chatroom) {
-        viewModelScope.launch(context = Dispatchers.IO) {
-            chatRepository.saveRoomToFavourites(selectedRoom).collect {
+        chatRepository.saveRoomToFavourites(selectedRoom)
+            .onEach {
                 roomContent.postValue(roomContent.value?.copy(favouriteRoomSaved = Event(true)))
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun sendMessage(text: String, roomId: Int) {
-        viewModelScope.launch(context = Dispatchers.IO) {
-            chatRepository.sendMessage(message = text, roomId = roomId)
-                .catch {
+        chatRepository.sendMessage(message = text, roomId = roomId)
+            .catch {
 // Nothing to do here
-                }
-                .collect {
-                    roomContent.postValue(roomContent.value?.copy(sendingMessageState = Event(true)))
-                }
-        }
+            }
+            .onEach {
+                roomContent.postValue(roomContent.value?.copy(sendingMessageState = Event(true)))
+            }
+            .launchIn(viewModelScope)
     }
 
     fun getUserList(id: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            chatRepository.getRoomInfo(id)
-                .catch {
+        chatRepository.getRoomInfo(id)
+            .catch {
 // Nothing to do here
+            }
+            .onEach {
+                if (it is State.Loaded) {
+                    roomContent.postValue(roomContent.value?.copy(chatBottomSheetState = it.data))
                 }
-                .collect {
-                    if (it is State.Loaded) {
-                        roomContent.postValue(roomContent.value?.copy(chatBottomSheetState = it.data))
-                    }
-                }
-        }
+            }
+            .launchIn(viewModelScope)
     }
 
     fun onSmilesClick() {
@@ -102,14 +99,13 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel() {
     }
 
     fun exitRoom(selectedRoom: Chatroom) {
-        viewModelScope.launch(Dispatchers.IO) {
-            chatRepository.exitRoom(selectedRoom).collect {
-                if (it is State.Error) {
-                    roomContent.postValue(roomContent.value?.copy(roomExitState = Event.createEvent(false)))
-                } else if (it is State.Loaded) {
-                    roomContent.postValue(roomContent.value?.copy(roomExitState = Event.createEvent(true)))
-                }
+        chatRepository.exitRoom(selectedRoom).onEach {
+            if (it is State.Error) {
+                roomContent.postValue(roomContent.value?.copy(roomExitState = Event.createEvent(false)))
+            } else if (it is State.Loaded) {
+                roomContent.postValue(roomContent.value?.copy(roomExitState = Event.createEvent(true)))
             }
         }
+            .launchIn(viewModelScope)
     }
 }

@@ -6,6 +6,7 @@ import com.example.xchat2.ui.main.db.UserDao
 import com.example.xchat2.ui.main.db.UserFavouriteRoom
 import com.example.xchat2.util.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import org.jsoup.Jsoup
@@ -32,7 +33,7 @@ interface ChatRepository {
 
     suspend fun getSendToken(roomId: Int)
 
-    suspend fun sendMessage(message: String, roomId: Int): Flow<State<Unit>>
+    fun sendMessage(message: String, roomId: Int): Flow<State<Unit>>
 
     fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>>
 
@@ -62,7 +63,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(State.Error(IllegalAccessError("nejde to, kámo")))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun tryLoginWithSavedInfo(): Flow<State<User>> {
@@ -75,14 +76,14 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(State.Error(IllegalAccessError("Nejde to")))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun isUserLogged(): Flow<Boolean> {
         return flow {
             val user = userDao.getUser()
             emit(user != null)
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun searchRooms(search: String): Flow<FavouriteRoomsState> {
@@ -105,7 +106,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         return flow {
             val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php").get()
             emit(State.Loaded(page.toRoomList()))
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun enterChatroom(chatroom: Chatroom): Flow<State<Unit>> {
@@ -118,31 +119,33 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(State.Error(IllegalAccessError("Nejde to")))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>> {
-
-        return flow {
-            do {
+        return ticker(10000, 0)
+            .consumeAsFlow()
+            .mapLatest {
                 val user = userDao.getUser()
                 try {
                     val response = createGetRoomContentRequest(user!!.token, chatroom.id).execute()
                     if (response != null) {
                         val output = response.getRoomHtmlString()
-                        if (output.length < 10) emit(State.Error(IllegalAccessError("Room content is shit")))
-                        else if (output.length > 10) emit(State.Loaded(output))
+                        if (output.length < 10) {
+                            State.Error(IllegalAccessError("Room content is shit"))
+                        } else {
+                            State.Loaded(output)
+                        }
                     } else {
-                        emit(State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo")))
+                        State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo"))
                     }
                 } catch (e: Exception) {
-                    emit(State.Error(UnknownHostException("Unknown host")))
+                    State.Error(UnknownHostException("Unknown host"))
                 }
-
-                delay(10000)
-            } while (true)
-        }
+            }
+            .flowOn(Dispatchers.IO)
     }
+
 
     override fun saveRoomToFavourites(selectedRoom: Chatroom): Flow<Long> {
         return flow {
@@ -156,7 +159,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                     )
                 )
             )
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getFavouriteRooms(): Flow<FavouriteRoomsState> {
@@ -167,7 +170,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(FavouriteRoomsState.AnonymousUser)
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override suspend fun getSendToken(roomId: Int) {
@@ -178,7 +181,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         }
     }
 
-    override suspend fun sendMessage(message: String, roomId: Int): Flow<State<Unit>> {
+    override fun sendMessage(message: String, roomId: Int): Flow<State<Unit>> {
         return flow {
             val user = userDao.getUser()
             getSendToken(roomId)
@@ -197,7 +200,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(State.Error(AnonymousUserException()))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>> {
@@ -212,7 +215,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 val roomInfo = ChatBottomSheetState.RoomInfo(users = userpage.getUserList(), admin = admin, idleTime = idle)
                 emit(State.Loaded(roomInfo))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun exitRoom(selectedRoom: Chatroom): Flow<State<Unit>> {
@@ -225,7 +228,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             } else {
                 emit(State.Error(IllegalAccessError("Opuštění místnosti selhalo")))
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getRoomUsers(roomId: Int): Flow<List<String>> {
@@ -237,6 +240,6 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 }
                 emit(userpage)
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 }
