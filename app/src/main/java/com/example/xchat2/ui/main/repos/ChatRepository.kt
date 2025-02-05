@@ -6,10 +6,12 @@ import com.example.xchat2.ui.main.db.UserDao
 import com.example.xchat2.ui.main.db.UserFavouriteRoom
 import com.example.xchat2.util.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import org.jsoup.Jsoup
+import java.io.IOException
 import java.net.UnknownHostException
 import kotlin.String
 
@@ -17,8 +19,7 @@ import kotlin.String
  * Repository for chat
  */
 interface ChatRepository {
-    fun login(name: String, password: String): Flow<State<User>>
-
+    suspend fun login(name: String, password: String): State<User>
     fun tryLoginWithSavedInfo(): Flow<State<User>>
 
     fun getRoomList(): Flow<State<List<Chatroom>>>
@@ -51,33 +52,41 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
     private var sendToken: String = ""
 
     @Suppress("BlockingMethodInNonBlockingContext")
-    override fun login(name: String, password: String): Flow<State<User>> {
-        return flow {
-            emit(State.Loading)
-            val response = createLoginRequest(name, password).execute()
+    override suspend fun login(name: String, password: String): State<User> {
+        val response = createLoginRequest(name, password).execute()
 
-            if (response.isSucessful()) {
-                val user = User(name, password, response.getUserHashtag())
-                userDao.insertUser(user)
-                emit(State.Loaded(user))
-            } else {
-                emit(State.Error(IllegalAccessError("nejde to, kámo")))
-            }
-        }.flowOn(Dispatchers.IO)
+        if (response.isSucessful()) {
+            val user = User(name, password, response.getUserHashtag())
+            userDao.insertUser(user)
+            return State.Loaded(user) // Return the loaded user
+        } else {
+            return State.Error(IllegalAccessError("Přihlášeni selhalo"))
+        }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun tryLoginWithSavedInfo(): Flow<State<User>> {
-        return flow {
-            val user = userDao.getUser()
-            if (user != null) {
-                login(user.name, user.password).collect { state ->
-                    emit(state)
+        return userDao.getUserFlow()
+            .take(1)
+            .flatMapLatest { user ->
+                if (user != null) {
+                    flow<State<User>> {  // Explicitly specify the type parameter
+                        emit(State.Loading)
+                        try {
+                            val apiUser = login(user.name, user.password)
+                            emit(apiUser)
+                        } catch (e: Exception) {
+                            emit(State.Error(e))
+                        }
+                    }
+                } else {
+                    flowOf<State<User>>(State.Error(IllegalAccessError("Not logged in"))) // Explicitly specify the type parameter
                 }
-            } else {
-                emit(State.Error(IllegalAccessError("Nejde to")))
             }
-        }.flowOn(Dispatchers.IO)
+            .flowOn(Dispatchers.IO)
     }
+
+
 
     override fun isUserLogged(): Flow<Boolean> {
         return flow {
@@ -104,9 +113,20 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     override fun getRoomList(): Flow<State<List<Chatroom>>> {
         return flow {
-            val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php").get()
+            val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php")
+                .timeout(10000)
+                .get()
             emit(State.Loaded(page.toRoomList()))
-        }.flowOn(Dispatchers.IO)
+        }
+            .retryWhen { cause, attempt ->
+                if (cause is IOException && attempt < 3) {
+                    delay(2000) // Wait for 2 seconds before retrying
+                    true // Retry
+                } else {
+                    false // Do not retry
+                }
+            }
+            .flowOn(Dispatchers.IO)
     }
 
     override fun enterChatroom(chatroom: Chatroom): Flow<State<Unit>> {

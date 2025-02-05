@@ -23,6 +23,10 @@ class RoomListViewModel(val chatRepository: ChatRepository) : ViewModel() {
             }
         }
     }
+
+    fun resetSelectedRoom() {
+        _selectedRoom.postValue(State.Idle)
+    }
 }
 
-data class SelectedRoomState(val selectedRoom: Chatroom, val logged: Boolean)
+data class SelectedRoomState(val selectedRoom: Chatroom? = null, val logged: Boolean)

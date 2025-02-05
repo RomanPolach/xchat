@@ -5,10 +5,17 @@ import com.example.xchat2.ui.main.repos.ChatRepository
 import com.example.xchat2.ui.main.db.User
 import com.example.xchat2.util.State
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-class LoginViewModel(val chatRepository: ChatRepository) : ViewModel() {
+class LoginViewModel(private val chatRepository: ChatRepository) : ViewModel() {
 
-    fun login(name: String, password: String): LiveData<State<User>> {
-        return chatRepository.login(name, password).asLiveData(viewModelScope.coroutineContext + Dispatchers.IO)
+    private val _loginState = MutableLiveData<State<User?>>()
+    val loginState: LiveData<State<User?>> = _loginState
+
+    fun login(name: String, password: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = chatRepository.login(name, password)
+            _loginState.postValue(state)
+        }
     }
 }

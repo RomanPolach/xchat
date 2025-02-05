@@ -9,8 +9,8 @@ data class ChatRoomContent(
     val roomHtmlState: State<String>,
     val roomExitState: Event<Boolean?> = Event.createDefaultState(),
     val favouriteRoomSaved: Event<Boolean?> = Event.createDefaultState(),
-    val sendingMessageState: Event<Boolean?> = Event.createDefaultState(),
     val retryingTimeout: Event<Boolean?> = Event.createDefaultState(),
     var chatBottomSheetState: ChatBottomSheetState = ChatBottomSheetState.Closed,
-    val roomUsers: List<String> = emptyList()
+    val roomUsers: List<String> = emptyList(),
+    val selectedUser: String = "Všem"
 )
