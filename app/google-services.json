@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "795164374715",
+    "project_id": "xchat-40a74",
+    "storage_bucket": "xchat-40a74.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:795164374715:android:d09ebaf1d9d5fee886db9e",
+        "android_client_info": {
+          "package_name": "com.example.xchat2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfccbksqs8aLHcOzD9EEGR6_zxrdi373U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

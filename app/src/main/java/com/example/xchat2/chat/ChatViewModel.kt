@@ -44,8 +44,8 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), Lifecycle
 
     @OnLifecycleEvent(Lifecycle.Event.ON_START)
     fun onAppForegrounded() {
-        currentChatroom?.let { chatroom ->
-            enterRoom(chatroom) // Re-enter the chat room when the app comes back to the foreground
+        currentChatroom?.let { chatroom -> 
+            enterRoom(chatroom)
         }
     }
 
@@ -62,7 +62,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), Lifecycle
         // Start new subscription
         currentRoomJob = chatRepository.enterChatroom(chatroom)
             .retryWhen { cause, attempt ->
-                delay(3000)
                 cause is UnknownHostException && attempt < 3
             }
             .filter { it is State.Loaded }

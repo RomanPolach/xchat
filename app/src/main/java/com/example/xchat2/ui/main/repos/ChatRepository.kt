@@ -7,7 +7,6 @@ import com.example.xchat2.ui.main.db.UserFavouriteRoom
 import com.example.xchat2.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import org.jsoup.Jsoup
@@ -143,27 +142,32 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
     }
 
     override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>> {
-        return ticker(10000, 0)
-            .consumeAsFlow()
-            .mapLatest {
-                val user = userDao.getUser()
-                try {
-                    val response = createGetRoomContentRequest(user!!.token, chatroom.id).execute()
-                    if (response != null) {
-                        val output = response.getRoomHtmlString()
-                        if (output.length < 10) {
-                            State.Error(IllegalAccessError("Room content is shit"))
-                        } else {
-                            State.Loaded(output)
-                        }
-                    } else {
-                        State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo"))
-                    }
-                } catch (e: Exception) {
-                    State.Error(UnknownHostException("Unknown host"))
-                }
+        return flow {
+            emit(Unit)
+            while (true) {
+                delay(10000)
+                emit(Unit)
             }
-            .flowOn(Dispatchers.IO)
+        }
+        .mapLatest {
+            val user = userDao.getUser()
+            try {
+                val response = createGetRoomContentRequest(user!!.token, chatroom.id).execute()
+                if (response != null) {
+                    val output = response.getRoomHtmlString()
+                    if (output.length < 10) {
+                        State.Error(IllegalAccessError("Room content is shit"))
+                    } else {
+                        State.Loaded(output)
+                    }
+                } else {
+                    State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo"))
+                }
+            } catch (e: Exception) {
+                State.Error(UnknownHostException("Unknown host"))
+            }
+        }
+        .flowOn(Dispatchers.IO)
     }
 
 
