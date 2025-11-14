@@ -3,23 +3,38 @@ package com.example.xchat2.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.asFlow
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.State
-import kotlinx.coroutines.flow.debounce
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,12 +43,11 @@ fun RoomListScreen(
     onBack: () -> Unit,
     onRoomSelected: (Chatroom, Boolean) -> Unit
 ) {
-    val roomsState by viewModel.getRoomList().asFlow().collectAsState(State.Idle)
-    val selectedRoomState by viewModel.selectedRoom.asFlow().collectAsState(null)
+    val uiState by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(selectedRoomState) {
-        if (selectedRoomState is State.Loaded) {
-            val data = (selectedRoomState as State.Loaded<SelectedRoomState>).data
+    LaunchedEffect(uiState.selectedRoomState) {
+        if (uiState.selectedRoomState is State.Loaded) {
+            val data = (uiState.selectedRoomState as State.Loaded<SelectedRoomState>).data
             if (data.selectedRoom == null) return@LaunchedEffect
             viewModel.resetSelectedRoom()
             onRoomSelected(data.selectedRoom, data.logged)
@@ -67,12 +81,13 @@ fun RoomListScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            when (roomsState) {
+            when (uiState.roomsState) {
                 is State.Loaded -> {
-                    val rooms = (roomsState as State.Loaded<List<Chatroom>>).data
+                    val rooms = (uiState.roomsState as State.Loaded<List<Chatroom>>).data
                     LazyColumn(
                         modifier = Modifier
-                            .fillMaxWidth().background(
+                            .fillMaxWidth()
+                            .background(
                                 brush = Brush.verticalGradient(
                                     colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
                                 )

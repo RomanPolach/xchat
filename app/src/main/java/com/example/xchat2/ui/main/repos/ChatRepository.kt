@@ -1,49 +1,68 @@
 package com.example.xchat2.ui.main.repos
 
+import android.util.Log
 import com.example.xchat2.chat.ChatBottomSheetState
 import com.example.xchat2.ui.main.db.User
 import com.example.xchat2.ui.main.db.UserDao
 import com.example.xchat2.ui.main.db.UserFavouriteRoom
-import com.example.xchat2.util.*
+import com.example.xchat2.util.State
+import com.example.xchat2.util.createEnterRoomRequest
+import com.example.xchat2.util.createGetRoomContentRequest
+import com.example.xchat2.util.createGetRoomInfoRequest
+import com.example.xchat2.util.createGetSendTokenRequest
+import com.example.xchat2.util.createGetUserListRequest
+import com.example.xchat2.util.createLoginRequest
+import com.example.xchat2.util.createRoomExitRequest
+import com.example.xchat2.util.createSendMessageRequest
+import com.example.xchat2.util.getRoomHtmlString
+import com.example.xchat2.util.getUserHashtag
+import com.example.xchat2.util.getUserList
+import com.example.xchat2.util.isSucessful
+import com.example.xchat2.util.toRoomList
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import kotlin.String
 
 /**
  * Repository for chat
  */
 interface ChatRepository {
     suspend fun login(name: String, password: String): State<User>
-    fun tryLoginWithSavedInfo(): Flow<State<User>>
+    suspend fun tryLoginWithSavedInfo(): State<User>
 
-    fun getRoomList(): Flow<State<List<Chatroom>>>
+    suspend fun getRoomList(): State<List<Chatroom>>
 
-    fun enterChatroom(chatroom: Chatroom): Flow<State<Unit>>
+    suspend fun enterChatroom(chatroom: Chatroom): State<Unit>
 
     fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>>
 
-    fun saveRoomToFavourites(selectedRoom: Chatroom): Flow<Long>
+    suspend fun fetchRoomContentOnce(chatroom: Chatroom): State<String>
 
-    fun getFavouriteRooms(): Flow<FavouriteRoomsState>
+    suspend fun saveRoomToFavourites(selectedRoom: Chatroom): Long
+
+    suspend fun getFavouriteRooms(): FavouriteRoomsState
 
     suspend fun getSendToken(roomId: Int)
 
-    fun sendMessage(message: String, roomId: Int): Flow<State<Unit>>
+    suspend fun sendMessage(message: String, roomId: Int): State<Unit>
 
-    fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>>
+    suspend fun getRoomInfo(roomId: Int): State<ChatBottomSheetState.RoomInfo>
 
-    fun exitRoom(selectedRoom: Chatroom): Flow<State<Unit>>
+    suspend fun exitRoom(selectedRoom: Chatroom): State<Unit>
 
-    fun getRoomUsers(roomId: Int): Flow<List<String>>
+    suspend fun getRoomUsers(roomId: Int): List<String>
 
-    fun isUserLogged(): Flow<Boolean>
+    suspend fun isUserLogged(): Boolean
 
-    fun searchRooms(search: String): Flow<FavouriteRoomsState>
+    suspend fun searchRooms(search: String): FavouriteRoomsState
 }
 
 class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
@@ -63,138 +82,185 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    override fun tryLoginWithSavedInfo(): Flow<State<User>> {
-        return userDao.getUserFlow()
-            .take(1)
-            .flatMapLatest { user ->
-                if (user != null) {
-                    flow<State<User>> {  // Explicitly specify the type parameter
-                        emit(State.Loading)
-                        try {
-                            val apiUser = login(user.name, user.password)
-                            emit(apiUser)
-                        } catch (e: Exception) {
-                            emit(State.Error(e))
-                        }
-                    }
-                } else {
-                    flowOf<State<User>>(State.Error(IllegalAccessError("Not logged in"))) // Explicitly specify the type parameter
-                }
-            }
-            .flowOn(Dispatchers.IO)
-    }
-
-
-
-    override fun isUserLogged(): Flow<Boolean> {
-        return flow {
+    override suspend fun tryLoginWithSavedInfo(): State<User> {
+        return withContext(Dispatchers.IO) {
             val user = userDao.getUser()
-            emit(user != null)
-        }.flowOn(Dispatchers.IO)
-    }
-
-    override fun searchRooms(search: String): Flow<FavouriteRoomsState> {
-
-        return flow {
-            val user = userDao.getUser()
-            (if (user != null) {
-                if (search.length < 2) {
-                    emit(FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getUserFavouriteRooms(user.id)))
-                } else {
-                    emit(FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getSearchedFavouriteRooms(search, user.id)))
+            if (user != null) {
+                try {
+                    login(user.name, user.password)
+                } catch (e: Exception) {
+                    State.Error(e)
                 }
             } else {
-                emit(FavouriteRoomsState.AnonymousUser)
-            })
-        }.flowOn(Dispatchers.IO)
-    }
-
-    override fun getRoomList(): Flow<State<List<Chatroom>>> {
-        return flow {
-            val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php")
-                .timeout(10000)
-                .get()
-            emit(State.Loaded(page.toRoomList()))
+                State.Error(IllegalAccessError("Not logged in"))
+            }
         }
-            .retryWhen { cause, attempt ->
-                if (cause is IOException && attempt < 3) {
-                    delay(2000) // Wait for 2 seconds before retrying
-                    true // Retry
-                } else {
-                    false // Do not retry
-                }
-            }
-            .flowOn(Dispatchers.IO)
     }
 
-    override fun enterChatroom(chatroom: Chatroom): Flow<State<Unit>> {
-        return flow {
+
+    override suspend fun isUserLogged(): Boolean {
+        return withContext(Dispatchers.IO) {
+            userDao.getUser() != null
+        }
+    }
+
+    override suspend fun searchRooms(search: String): FavouriteRoomsState {
+        return withContext(Dispatchers.IO) {
             val user = userDao.getUser()
-            val response = createEnterRoomRequest(user!!.token, chatroom.id).execute()
-            val code = response.statusCode()
-            if (code == 200) {
-                emit(State.Loaded(data = Unit))
+            if (user != null) {
+                if (search.length < 2) {
+                    FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getUserFavouriteRooms(user.id))
+                } else {
+                    FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getSearchedFavouriteRooms(search, user.id))
+                }
             } else {
-                emit(State.Error(IllegalAccessError("Nejde to")))
+                FavouriteRoomsState.AnonymousUser
             }
-        }.flowOn(Dispatchers.IO)
+        }
+    }
+
+    override suspend fun getRoomList(): State<List<Chatroom>> {
+        return withContext(Dispatchers.IO) {
+            var attempt = 0
+            while (attempt < 3) {
+                try {
+                    val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php")
+                        .timeout(10000)
+                        .get()
+                    return@withContext State.Loaded(page.toRoomList())
+                } catch (e: IOException) {
+                    attempt++
+                    if (attempt < 3) {
+                        delay(2000)
+                    } else {
+                        return@withContext State.Error(e)
+                    }
+                } catch (e: Exception) {
+                    return@withContext State.Error(e)
+                }
+            }
+            State.Error(IOException("Failed to fetch room list after 3 attempts"))
+        }
+    }
+
+    override suspend fun enterChatroom(chatroom: Chatroom): State<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val user = userDao.getUser()
+                val response = createEnterRoomRequest(user!!.token, chatroom.id).execute()
+                val code = response.statusCode()
+                if (code == 200) {
+                    State.Loaded(data = Unit)
+                } else {
+                    State.Error(IllegalAccessError("Nejde to"))
+                }
+            } catch (e: Exception) {
+                State.Error(e)
+            }
+        }
     }
 
     override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>> {
         return flow {
-            emit(Unit)
+            emit(Unit) // Emit immediately for the first load attempt
             while (true) {
-                delay(10000)
+                // Reduce polling delay from 10 seconds to 3 seconds
+                delay(3000)
                 emit(Unit)
             }
         }
-        .mapLatest {
-            val user = userDao.getUser()
+            .mapLatest { // Use mapLatest to cancel previous requests if a new poll starts
+                val user = userDao.getUser() // Fetch user within mapLatest to get fresh data if needed
+                if (user == null) {
+                    return@mapLatest State.Error(AnonymousUserException())
+                }
             try {
-                val response = createGetRoomContentRequest(user!!.token, chatroom.id).execute()
+                // Consider adding timeouts to the OkHttpClient instance used here
+                val response = createGetRoomContentRequest(user.token, chatroom.id).execute()
                 if (response != null) {
                     val output = response.getRoomHtmlString()
+                    // Basic validation - maybe needs improvement
                     if (output.length < 10) {
-                        State.Error(IllegalAccessError("Room content is shit"))
+                        State.Error(IllegalStateException("Invalid room content received")) // More specific error
                     } else {
                         State.Loaded(output)
                     }
                 } else {
-                    State.Error(IllegalAccessError("Načtení obsahu roomu se nepovedlo"))
+                    State.Error(IOException("Failed to fetch room content: null response")) // More specific error
                 }
+            } catch (e: SocketTimeoutException) {
+                Log.w("ChatRepository", "Timeout fetching room content for ${chatroom.id}", e)
+                State.Error(e) // Propagate timeout exception
+            } catch (e: UnknownHostException) {
+                Log.w("ChatRepository", "Unknown host fetching room content for ${chatroom.id}", e)
+                State.Error(e) // Propagate network exception
+            } catch (e: IOException) {
+                Log.w("ChatRepository", "IOException fetching room content for ${chatroom.id}", e)
+                State.Error(e) // Propagate other IO exceptions
             } catch (e: Exception) {
-                State.Error(UnknownHostException("Unknown host"))
+                Log.e("ChatRepository", "Unexpected error fetching room content for ${chatroom.id}", e)
+                State.Error(e) // Propagate unexpected errors
             }
         }
         .flowOn(Dispatchers.IO)
     }
 
-
-    override fun saveRoomToFavourites(selectedRoom: Chatroom): Flow<Long> {
-        return flow {
+    override suspend fun fetchRoomContentOnce(chatroom: Chatroom): State<String> {
+        return withContext(Dispatchers.IO) {
             val user = userDao.getUser()
-            emit(
-                userDao.saveRoomToFavourites(
-                    UserFavouriteRoom(
-                        userId = user!!.id,
-                        roomId = selectedRoom.id,
-                        roomName = selectedRoom.name
-                    )
-                )
-            )
-        }.flowOn(Dispatchers.IO)
+            if (user == null) {
+                return@withContext State.Error(AnonymousUserException())
+            }
+            try {
+                val response = createGetRoomContentRequest(user.token, chatroom.id).execute()
+                if (response != null) {
+                    val output = response.getRoomHtmlString()
+                    if (output.length < 10) {
+                        State.Error(IllegalStateException("Invalid room content received"))
+                    } else {
+                        State.Loaded(output)
+                    }
+                } else {
+                    State.Error(IOException("Failed to fetch room content: null response"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Log.w("ChatRepository", "Timeout fetching room content (once) for ${chatroom.id}", e)
+                State.Error(e)
+            } catch (e: UnknownHostException) {
+                Log.w("ChatRepository", "Unknown host fetching room content (once) for ${chatroom.id}", e)
+                State.Error(e)
+            } catch (e: IOException) {
+                Log.w("ChatRepository", "IOException fetching room content (once) for ${chatroom.id}", e)
+                State.Error(e)
+            } catch (e: Exception) {
+                Log.e("ChatRepository", "Unexpected error fetching room content (once) for ${chatroom.id}", e)
+                State.Error(RuntimeException("Error during fetch: ${e.message}", e))
+            }
+        }
     }
 
-    override fun getFavouriteRooms(): Flow<FavouriteRoomsState> {
-        return flow {
+    override suspend fun saveRoomToFavourites(selectedRoom: Chatroom): Long {
+        return withContext(Dispatchers.IO) {
+            val user = userDao.getUser()
+            userDao.saveRoomToFavourites(
+                UserFavouriteRoom(
+                    userId = user!!.id,
+                    roomId = selectedRoom.id,
+                    roomName = selectedRoom.name
+                )
+            )
+        }
+    }
+
+    override suspend fun getFavouriteRooms(): FavouriteRoomsState {
+        return withContext(Dispatchers.IO) {
             val user = userDao.getUser()
             if (user != null) {
-                emit(FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getUserFavouriteRooms(user.id)))
+                FavouriteRoomsState.FavouriteRoomsLoaded(userDao.getUserFavouriteRooms(user.id))
             } else {
-                emit(FavouriteRoomsState.AnonymousUser)
+                FavouriteRoomsState.AnonymousUser
             }
-        }.flowOn(Dispatchers.IO)
+        }
     }
 
     override suspend fun getSendToken(roomId: Int) {
@@ -205,11 +271,14 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         }
     }
 
-    override fun sendMessage(message: String, roomId: Int): Flow<State<Unit>> {
-        return flow {
-            val user = userDao.getUser()
-            getSendToken(roomId)
-            if (user != null) {
+    override suspend fun sendMessage(message: String, roomId: Int): State<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val user = userDao.getUser()
+                if (user == null) {
+                    return@withContext State.Error(AnonymousUserException())
+                }
+                getSendToken(roomId)
                 val response = createSendMessageRequest(
                     message = message,
                     roomId = roomId,
@@ -217,53 +286,63 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                     sendToken = sendToken
                 ).execute()
                 if (response.statusCode() == 200) {
-                    emit(State.Loaded(Unit))
+                    State.Loaded(Unit)
                 } else {
-                    emit(State.Error(IllegalAccessError("Odeslání zprávy selhalo")))
+                    State.Error(IllegalAccessError("Odeslání zprávy selhalo"))
                 }
-            } else {
-                emit(State.Error(AnonymousUserException()))
+            } catch (e: Exception) {
+                State.Error(e)
             }
-        }.flowOn(Dispatchers.IO)
+        }
     }
 
-    override fun getRoomInfo(roomId: Int): Flow<State<ChatBottomSheetState.RoomInfo>> {
-        return flow {
-            val user = userDao.getUser()
-            user?.let {
+    override suspend fun getRoomInfo(roomId: Int): State<ChatBottomSheetState.RoomInfo> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val user = userDao.getUser()
+                if (user == null) {
+                    return@withContext State.Error(AnonymousUserException())
+                }
                 val userpage = createGetUserListRequest(roomId = roomId, token = user.token).get()
                 val roomInfoPage = createGetRoomInfoRequest(roomId = roomId, token = user.token).get()
                 val pageString = roomInfoPage.toString()
                 val admin = Regex("strong id=\"admin\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
                 val idle = Regex("strong id=\"idle\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
                 val roomInfo = ChatBottomSheetState.RoomInfo(users = userpage.getUserList(), admin = admin, idleTime = idle)
-                emit(State.Loaded(roomInfo))
+                State.Loaded(roomInfo)
+            } catch (e: Exception) {
+                State.Error(e)
             }
-        }.flowOn(Dispatchers.IO)
+        }
     }
 
-    override fun exitRoom(selectedRoom: Chatroom): Flow<State<Unit>> {
-        return flow {
-            val user = userDao.getUser()
-            val exitRequest = createRoomExitRequest(user!!.token, selectedRoom.id)
-            val response = exitRequest.execute()
-            if (response.statusCode() == 200) {
-                emit(State.Loaded(Unit))
-            } else {
-                emit(State.Error(IllegalAccessError("Opuštění místnosti selhalo")))
+    override suspend fun exitRoom(selectedRoom: Chatroom): State<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val user = userDao.getUser()
+                val exitRequest = createRoomExitRequest(user!!.token, selectedRoom.id)
+                val response = exitRequest.execute()
+                if (response.statusCode() == 200) {
+                    State.Loaded(Unit)
+                } else {
+                    State.Error(IllegalAccessError("Opuštění místnosti selhalo"))
+                }
+            } catch (e: Exception) {
+                State.Error(e)
             }
-        }.flowOn(Dispatchers.IO)
+        }
     }
 
-    override fun getRoomUsers(roomId: Int): Flow<List<String>> {
-        return flow {
+    override suspend fun getRoomUsers(roomId: Int): List<String> {
+        return withContext(Dispatchers.IO) {
             val user = userDao.getUser()
-            user?.let {
-                val userpage = createGetUserListRequest(roomId = roomId, token = user.token).get().getUserList().map {
+            if (user != null) {
+                createGetUserListRequest(roomId = roomId, token = user.token).get().getUserList().map {
                     it.nickname
                 }
-                emit(userpage)
+            } else {
+                emptyList()
             }
-        }.flowOn(Dispatchers.IO)
+        }
     }
 }

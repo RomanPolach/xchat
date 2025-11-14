@@ -1,17 +1,37 @@
-package com.example.xchat2.ui.main.login
+package com.example.xchat2
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.xchat2.ui.main.login.LoginViewModel
 import com.example.xchat2.util.State
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -21,9 +41,7 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onBack: () -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    val loginState by viewModel.loginState.observeAsState(initial = null)
+    val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -42,36 +60,45 @@ fun LoginScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize().background(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
-            )
-        )) {
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
+                    )
+                )
+        ) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
                 verticalArrangement = Arrangement.Center
             ) {
                 OutlinedTextField(
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White),
-                    value = username,
-                    onValueChange = { username = it },
+                    value = uiState.username,
+                    onValueChange = { viewModel.onUsernameChange(it) },
                     label = { Text("Zadej Přezdívku") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(20.dp))
                 OutlinedTextField(
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White),
-                    value = password,
-                    onValueChange = { password = it },
+                    value = uiState.password,
+                    onValueChange = { viewModel.onPasswordChange(it) },
                     label = { Text("Heslo") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(20.dp))
-                val isLoading = loginState is State.Loading
+                val isLoading = uiState.loginState is State.Loading
                 Button(
-                    onClick = { viewModel.login(username, password) },
-                    enabled = !isLoading && username.isNotEmpty() && password.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth().height(60.dp)
+                    onClick = { viewModel.login() },
+                    enabled = !isLoading && uiState.username.isNotEmpty() && uiState.password.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
                 ) {
                     Text("Přihlásit se")
                 }
@@ -80,15 +107,13 @@ fun LoginScreen(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
 
-                if (loginState is State.Loaded) {
-                    LaunchedEffect(Unit) {
+                if (uiState.loginState is State.Loaded) {
                         onLoginSuccess()
-                    }
                 }
 
-                if (loginState is State.Error) {
+                if (uiState.loginState is State.Error) {
                     Text(
-                        text = "Chyba: ${(loginState as State.Error).error.message}",
+                        text = "Chyba: ${(uiState.loginState as State.Error).error.message}",
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )

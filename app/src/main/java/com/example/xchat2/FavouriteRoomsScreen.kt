@@ -1,26 +1,45 @@
 // FavouriteRoomsScreen.kt
-package com.example.xchat2.ui.main.favourite
+package com.example.xchat2
 
 import FavouriteRoomsViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.asFlow
-import com.example.xchat2.ui.main.repos.FavouriteRoomsState
 import com.example.xchat2.ui.main.repos.Chatroom
+import com.example.xchat2.ui.main.repos.FavouriteRoomsState
 import toChatRoomList
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,13 +49,7 @@ fun FavouriteRoomsScreen(
     onRoomClick: (Chatroom) -> Unit,
     onBack: () -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    val favouriteRoomsState by viewModel.getFavouriteRooms().asFlow().collectAsState(initial = FavouriteRoomsState.AnonymousUser)
-    val filterRoomsState by viewModel.filterRoomsLiveData.asFlow().collectAsState(initial = favouriteRoomsState)
-
-    LaunchedEffect(searchQuery) {
-        viewModel.setSearchQuery(searchQuery)
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -54,20 +67,36 @@ fun FavouriteRoomsScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().background(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
-            ))){
+        Column(modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
+                )
+            )){
+            var searchQuery by remember { mutableStateOf("") }
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
+                onValueChange = {
+                    searchQuery = it
+                    viewModel.setSearchQuery(it)
+                },
                 label = { Text("Hledej") },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             )
 
-            when (filterRoomsState) {
+            val roomsState = if (uiState.searchQuery.isEmpty()) {
+                uiState.favouriteRoomsState
+            } else {
+                uiState.filterRoomsState
+            }
+
+            when (roomsState) {
                 is FavouriteRoomsState.FavouriteRoomsLoaded -> {
-                    val rooms = (filterRoomsState as FavouriteRoomsState.FavouriteRoomsLoaded).rooms.toChatRoomList()
+                    val rooms = roomsState.rooms.toChatRoomList()
                     if (rooms.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("Nenalezeny žádné oblíbené místnosti")

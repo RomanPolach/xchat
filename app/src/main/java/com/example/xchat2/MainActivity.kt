@@ -6,25 +6,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.navigation.NavType
-import androidx.navigation.compose.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.navigation.navOptions
-import com.example.xchat2.ui.main.MainViewModel
-import com.example.xchat2.ui.main.login.LoginViewModel
 import com.example.xchat2.chat.ChatViewModel
 import com.example.xchat2.chat.RoomListScreen
 import com.example.xchat2.chat.RoomListViewModel
 import com.example.xchat2.ui.main.MainScreen
-import com.example.xchat2.ui.main.favourite.FavouriteRoomsScreen
-import com.example.xchat2.ui.main.login.LoginScreen
-import org.koin.android.ext.android.inject
+import com.example.xchat2.ui.main.MainViewModel
+import com.example.xchat2.ui.main.login.LoginViewModel
+import org.koin.androidx.compose.koinViewModel
 
 class MainActivity : ComponentActivity() {
-    private val mainViewModel: MainViewModel by inject()
-    private val loginViewModel: LoginViewModel by inject()
-    private val roomListViewModel: RoomListViewModel by inject()
-    private val chatViewModel: ChatViewModel by inject()
-    private val favViewModel: FavouriteRoomsViewModel by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +29,7 @@ class MainActivity : ComponentActivity() {
 
                 NavHost(navController, startDestination = "main") {
                     composable("main") {
+                        val mainViewModel: MainViewModel = koinViewModel()
                         MainScreen(
                             viewModel = mainViewModel,
                             onLoginClick = { navController.navigate("login") },
@@ -42,15 +37,17 @@ class MainActivity : ComponentActivity() {
                             onFavouritesClick = { navController.navigate("favourites") }
                         )
                     }
-                    composable("login/{roomId}?roomName={roomName}",
+                    composable(
+                        "login/{roomId}?roomName={roomName}",
                         arguments = listOf(
                             navArgument("roomId") { defaultValue = -1; type = NavType.IntType },
                             navArgument("roomName") { defaultValue = ""; type = NavType.StringType }
                         )) {
                         val roomId = it.arguments?.getInt("roomId") ?: -1
                         val roomName = it.arguments?.getString("roomName") ?: ""
+                        val loginViewModel: LoginViewModel = koinViewModel()
                         LoginScreen(
-                            loginViewModel,
+                            viewModel = loginViewModel,
                             onLoginSuccess = {
                                 if (roomId > 0) {
                                     navController.navigate("chat/$roomId/$roomName") {
@@ -64,13 +61,15 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("login") {
+                        val loginViewModel: LoginViewModel = koinViewModel()
                         LoginScreen(
-                            loginViewModel,
+                            viewModel = loginViewModel,
                             onLoginSuccess = { navController.popBackStack() },
                             onBack = { navController.popBackStack() }
                         )
                     }
                     composable("roomList") {
+                        val roomListViewModel: RoomListViewModel = koinViewModel()
                         RoomListScreen(
                             viewModel = roomListViewModel,
                             onBack = { navController.popBackStack() },
@@ -100,17 +99,22 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val roomId = it.arguments?.getInt("roomId") ?: -1
                         val roomName = it.arguments?.getString("roomName") ?: ""
+                        val chatViewModel: ChatViewModel = koinViewModel()
                         ChatScreen(
                             viewModel = chatViewModel,
                             roomId = roomId,
                             roomName = roomName,
                             onExit = {
-                                // Pop back to roomList instead of navigating to main
-                                navController.popBackStack(route = "roomList", inclusive = false)
+                                if (!navController.popBackStack(route = "roomList", inclusive = false)) {
+                                    navController.navigate("roomList") {
+                                        popUpTo("main") { inclusive = false }
+                                    }
+                                }
                             }
                         )
                     }
                     composable("favourites") {
+                        val favViewModel: FavouriteRoomsViewModel = koinViewModel()
                         FavouriteRoomsScreen(
                             viewModel = favViewModel,
                             onRoomClick = { room ->
@@ -123,5 +127,4 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
 }

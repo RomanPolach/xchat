@@ -8,13 +8,22 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,20 +34,42 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.outlined.Face
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.rememberStandardBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -47,14 +78,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.asFlow
 import com.example.xchat2.chat.ChatBottomSheetState
 import com.example.xchat2.chat.ChatUser
 import com.example.xchat2.chat.ChatViewModel
 import com.example.xchat2.chat.Sex
-import com.example.xchat2.ui.main.repos.ChatRoomContent
 import com.example.xchat2.ui.main.repos.Chatroom
-import com.example.xchat2.util.Event
 import com.example.xchat2.util.State
 import kotlinx.coroutines.launch
 
@@ -81,18 +109,12 @@ fun ChatScreen(
         }
     }
 
-    val roomContent by viewModel.roomContent.collectAsState(
-        ChatRoomContent(
-            roomHtmlState = State.Idle,
-            roomUsers = emptyList(),
-            favouriteRoomSaved = Event.createDefaultState(),
-            retryingTimeout = Event.createDefaultState(),
-            roomExitState = Event.createDefaultState(),
-            chatBottomSheetState = ChatBottomSheetState.Closed
-        )
-    )
+    val uiState by viewModel.uiState.collectAsState()
+    val roomContent = uiState.roomContent
 
-    val messageState = viewModel.message.collectAsState()
+    LaunchedEffect(roomId, roomName) {
+        viewModel.initializeRoom(roomId, roomName)
+    }
 
     DisposableEffect(roomId) {
         onDispose {
@@ -100,45 +122,52 @@ fun ChatScreen(
         }
     }
 
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(text = messageState.value)) }
-    var lastHtmlState = ""
-
-    LaunchedEffect(messageState.value) {
-        if (textFieldValue.text != messageState.value) {
-            textFieldValue = textFieldValue.copy(
-                text = messageState.value,
-                selection = TextRange(messageState.value.length) // Set cursor to the end
-            )
-        }
-    }
-
-    if (roomContent.favouriteRoomSaved.getContentIfNotHandled() == true) {
-        Toast.makeText(LocalContext.current, "Room saved to favourites", Toast.LENGTH_LONG).show()
-    }
-
     val bottomSheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.Hidden,
         skipHiddenState = false
     )
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = bottomSheetState)
+    val coroutineScope = rememberCoroutineScope()
+    val lastHandledState = remember { mutableStateOf<ChatBottomSheetState?>(null) }
 
-    LaunchedEffect(roomId, roomName) {
-        viewModel.cleanupRoom() // Clean up any existing room
-        viewModel.enterRoom(Chatroom(roomId, roomName))
-    }
+    SideEffect {
+        if (lastHandledState.value != roomContent.chatBottomSheetState) {
+            lastHandledState.value = roomContent.chatBottomSheetState
+            when (roomContent.chatBottomSheetState) {
+                is ChatBottomSheetState.Closed -> {
+                    coroutineScope.launch {
+                        bottomSheetState.hide()
+                    }
+                }
 
-    // Show or hide bottom sheet based on chatBottomSheetState
-    LaunchedEffect(roomContent.chatBottomSheetState) {
-        if (roomContent.chatBottomSheetState == ChatBottomSheetState.Closed) {
-            bottomSheetState.hide()
-        } else {
-            bottomSheetState.expand()
+                else -> {
+                    coroutineScope.launch {
+                        bottomSheetState.expand()
+                    }
+                }
+            }
         }
     }
 
+    SideEffect {
+        uiState.shouldShowToast?.getContentIfNotHandled()?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            viewModel.onToastShown()
+        }
+    }
 
-    var showSuggestions by remember { mutableStateOf(false) }
-    var filteredUsers by remember { mutableStateOf(emptyList<String>()) }
+    SideEffect {
+        uiState.shouldNavigateExit?.getContentIfNotHandled()?.let {
+            if (it) {
+                onExit()
+                viewModel.onExitHandled()
+            }
+        }
+    }
+
+    var textFieldValue by remember(uiState.message) {
+        mutableStateOf(TextFieldValue(text = uiState.message, selection = TextRange(uiState.message.length)))
+    }
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
@@ -176,167 +205,155 @@ fun ChatScreen(
             )
         },
         content = { padding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { viewModel.refreshRoomContent() },
+                modifier = Modifier.fillMaxSize()
             ) {
-
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-
+                        .padding(padding)
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
 
-                    AndroidView(
-                        factory = {
-                            webView
-                        },
-                        update = { webView ->
-                            when (roomContent.roomHtmlState) {
-                                is State.Loaded -> {
-                                    val loadedHtml = (roomContent.roomHtmlState as State.Loaded).data
-                                    if (loadedHtml != lastHtmlState) {
-                                        webView.loadDataWithBaseURL(
-                                            null,
-                                            loadedHtml,
-                                            "text/html",
-                                            "UTF-8",
-                                            null
-                                        )
-                                        lastHtmlState = loadedHtml
-                                    }
+                    ) {
+
+                        AndroidView(
+                            factory = {
+                                webView
+                            },
+                            update = { webView ->
+                                val htmlToLoad = when (val state = roomContent.roomHtmlState) {
+                                    is State.Loaded -> state.data
+                                    is State.Loading -> "<html><body><h3>Načítám...</h3></body></html>"
+                                    else -> null
                                 }
-                                is State.Loading -> {
+                                htmlToLoad?.let { html ->
                                     webView.loadDataWithBaseURL(
                                         null,
-                                        "<html><body><h3>Načítám...</h3></body></html>",
+                                        html,
                                         "text/html",
                                         "UTF-8",
                                         null
                                     )
+                                    if (roomContent.roomHtmlState is State.Loaded) {
+                                        viewModel.updateLastHtmlState((roomContent.roomHtmlState as State.Loaded).data)
+                                    }
                                 }
-                                else -> {
-                                    // Handle other states (e.g., State.Error) if needed
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        )
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(70.dp)
-                            .background(Color.LightGray)
-                            .padding(8.dp)
-                    ) {
-                        // 1) ExposedDropdownMenuBox for selecting a user or "all users"
-                        var expanded by remember { mutableStateOf(false) }
-                        ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { expanded = !expanded },
-                            modifier = Modifier.weight(1.2f)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(70.dp)
+                                .background(Color.LightGray)
+                                .padding(8.dp)
                         ) {
-                            val textFieldColors = OutlinedTextFieldDefaults.colors(
-                                // customize colors if needed
-                            )
-
-                            BasicTextField(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .fillMaxHeight()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                                value = roomContent.selectedUser,
-                                onValueChange = { viewModel.onSelectedUserChange(it) },
-                                singleLine = true,
-                                readOnly = true,
-                                textStyle = LocalTextStyle.current.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = TextAlign.Center),
-                                decorationBox = { innerTextField ->
-                                    OutlinedTextFieldDefaults.DecorationBox(
-                                        value = roomContent.selectedUser,
-                                        innerTextField = innerTextField,
-                                        enabled = true,
-                                        singleLine = true,
-                                        visualTransformation = VisualTransformation.None,
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        trailingIcon = {
-                                            IconButton(
-                                                modifier = Modifier
-                                                    .size(24.dp)
-                                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable), // Exact size of the icon,
-                                                onClick = { expanded = !expanded },
-                                            )
-                                            {
-                                                Icon(
-                                                    imageVector = Icons.Filled.ArrowDropDown,
-                                                    contentDescription = "Dropdown",
-                                                    modifier = Modifier.fillMaxSize() // Let the icon fill the Box
-                                                )
-                                            }
-                                        },
-                                        leadingIcon = null,
-                                        supportingText = null,
-                                        isError = false,
-                                        colors = textFieldColors,
-                                        // ↓ Here, you directly control the content padding
-                                        contentPadding = PaddingValues(start = 4.dp, end = 0.dp, top = 4.dp, bottom = 4.dp)
-                                    )
-                                },
-
+                            ExposedDropdownMenuBox(
+                                expanded = uiState.userDropdownExpanded,
+                                onExpandedChange = { viewModel.onUserDropdownExpandedChange(it) },
+                                modifier = Modifier.weight(1.2f)
+                            ) {
+                                val textFieldColors = OutlinedTextFieldDefaults.colors(
+                                    // customize colors if needed
                                 )
 
-                            // 2) The dropdown list: "all users" + each user in roomContent.roomUsers
-                            ExposedDropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                val userList = listOf("Všem") + roomContent.roomUsers
-                                userList.forEach { user ->
-                                    DropdownMenuItem(
-                                        text = { Text(user) },
-                                        onClick = {
-                                            viewModel.onSelectedUserChange(user)
-                                            expanded = false
-                                        }
+                                BasicTextField(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight()
+                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                                    value = roomContent.selectedUser,
+                                    onValueChange = { viewModel.onSelectedUserChange(it) },
+                                    singleLine = true,
+                                    readOnly = true,
+                                    textStyle = LocalTextStyle.current.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    decorationBox = { innerTextField ->
+                                        OutlinedTextFieldDefaults.DecorationBox(
+                                            value = roomContent.selectedUser,
+                                            innerTextField = innerTextField,
+                                            enabled = true,
+                                            singleLine = true,
+                                            visualTransformation = VisualTransformation.None,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            trailingIcon = {
+                                                IconButton(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                                                    onClick = { viewModel.onUserDropdownExpandedChange(!uiState.userDropdownExpanded) },
+                                                )
+                                                {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.ArrowDropDown,
+                                                        contentDescription = "Dropdown",
+                                                        modifier = Modifier.fillMaxSize() // Let the icon fill the Box
+                                                    )
+                                                }
+                                            },
+                                            leadingIcon = null,
+                                            supportingText = null,
+                                            isError = false,
+                                            colors = textFieldColors,
+                                            // ↓ Here, you directly control the content padding
+                                            contentPadding = PaddingValues(start = 4.dp, end = 0.dp, top = 4.dp, bottom = 4.dp)
+                                        )
+                                    },
+
                                     )
+
+                                ExposedDropdownMenu(
+                                    expanded = uiState.userDropdownExpanded,
+                                    onDismissRequest = { viewModel.onUserDropdownExpandedChange(false) }
+                                ) {
+                                    val userList = listOf("Všem") + roomContent.roomUsers
+                                    userList.forEach { user ->
+                                        DropdownMenuItem(
+                                            text = { Text(user) },
+                                            onClick = {
+                                                viewModel.onSelectedUserChange(user)
+                                            }
+                                        )
+                                    }
                                 }
                             }
-                        }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
 
-                        OutlinedTextField(
-                            colors = TextFieldDefaults.colors(focusedTextColor = Color.Black, unfocusedTextColor = Color.Black),
-                            value = textFieldValue,
-                            singleLine = true,
-                            onValueChange = { value ->
-                                textFieldValue = value // Update the local state
-                                val newText = value.text
-                                if (newText.isNotEmpty() && newText.length in 3..8) {
-                                    filteredUsers = roomContent.roomUsers.filter { it.startsWith(newText, ignoreCase = true) }
-                                    showSuggestions = filteredUsers.isNotEmpty()
-                                } else {
-                                    showSuggestions = false
-                                }
-                                viewModel.onMessageChange(newText) // Update the ViewModel
-                            },
-                            placeholder = { Text("Poslat zprávu") },
-                            modifier = Modifier
-                                .weight(2f)
-                                .fillMaxHeight(),
-                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(
-                                onSend = {
-                                    viewModel.sendMessage(roomId)
-                                }
+                            OutlinedTextField(
+                                colors = TextFieldDefaults.colors(focusedTextColor = Color.Black, unfocusedTextColor = Color.Black),
+                                value = textFieldValue,
+                                singleLine = true,
+                                onValueChange = { value ->
+                                    textFieldValue = value
+                                    viewModel.onMessageChange(value.text)
+                                },
+                                placeholder = { Text("Poslat zprávu") },
+                                modifier = Modifier
+                                    .weight(2f)
+                                    .fillMaxHeight(),
+                                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(
+                                    onSend = {
+                                        viewModel.sendMessage(roomId)
+                                    }
+                                )
                             )
-                        )
+                        }
                     }
                 }
-                if (showSuggestions) {
+                if (uiState.showSuggestions) {
                     Box(
                         contentAlignment = Alignment.BottomCenter,
                         modifier = Modifier
@@ -347,12 +364,11 @@ fun ChatScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth(0.4f)
-                                .background(
-                                    Color.White
-                                )
-                                .padding(vertical = 10.dp), horizontalAlignment = Alignment.Start
+                                .background(Color.White)
+                                .padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.Start
                         ) {
-                            filteredUsers.forEach { user ->
+                            uiState.filteredUsers.forEach { user ->
                                 Text(
                                     textAlign = TextAlign.Center,
                                     color = Color.Black,
@@ -361,8 +377,7 @@ fun ChatScreen(
                                         .fillMaxWidth()
                                         .background(Color.White)
                                         .clickable {
-                                            viewModel.onMessageChange("$user: ")
-                                            showSuggestions = false
+                                            viewModel.onSuggestionClick(user)
                                         }
                                         .padding(vertical = 8.dp)
                                 )
@@ -394,13 +409,6 @@ fun ChatScreen(
             }
         }
     )
-
-
-    // Navigate away if exit event triggered
-    val exitEvent = roomContent.roomExitState.getContentIfNotHandled()
-    if (exitEvent == true) {
-        onExit()
-    }
 }
 
 @Composable

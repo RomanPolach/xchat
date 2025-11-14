@@ -13,7 +13,7 @@ import java.util.regex.Matcher
 fun ChatRepository.createLoginRequest(name: String, password: String) =
     Jsoup.connect("https://www.xchat.cz/login/")
         .userAgent("Mozilla/5.0")
-        .timeout(40000)
+        .timeout(15000)
         .method(Connection.Method.POST)
         .followRedirects(false)
         .data("js", "1")
@@ -54,7 +54,7 @@ fun ChatRepository.createEnterRoomRequest(token: String, roomId: Int): Connectio
 
     val response = Jsoup.connect(dest)
         .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.10240")
-        .timeout(40000)
+        .timeout(15000)
         .method(Connection.Method.GET)
         .followRedirects(true)
     return response
@@ -65,7 +65,7 @@ fun ChatRepository.createGetRoomContentRequest(token: String, roomId: Int): Conn
     val response = Jsoup.connect(sourceroom)
         .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.10240")
         .method(Connection.Method.GET)
-        .timeout(4000)
+        .timeout(15000)
         .followRedirects(true)
     return response
 }
@@ -105,19 +105,19 @@ fun Connection.Response.getRoomHtmlString(): String {
 
 fun ChatRepository.createRoomExitRequest(hash: String, roomId: Int): Connection {
     val adr = "https://www.xchat.cz/$hash/modchat?op=mainframeset&menuaction=leave&leftroom=$roomId&js=1&skin=2&cid=16"
-    return Jsoup.connect(adr).timeout(40000)
+    return Jsoup.connect(adr).timeout(15000)
 }
 
 fun ChatRepository.createGetSendTokenRequest(roomId: Int, token: String): Connection {
     val url = "https://www.xchat.cz/$token/modchat?op=textpageng&skin=2&rid=$roomId&js=1"
-    return Jsoup.connect(url).timeout(40000)
+    return Jsoup.connect(url).timeout(15000)
 }
 
 fun ChatRepository.createSendMessageRequest(message: String, roomId: Int, token: String, sendToken: String): Connection {
     return Jsoup.connect("https://www.xchat.cz/$token/modchat")
         .postDataCharset("ISO-8859-2")
         .userAgent("Mozilla/5.0")
-        .timeout(40000)
+        .timeout(15000)
         .method(Connection.Method.POST)
         .followRedirects(false)
         .data("op", "textpageng")
@@ -133,7 +133,7 @@ fun ChatRepository.createSendMessageRequest(message: String, roomId: Int, token:
 
 fun ChatRepository.createGetUserListRequest(roomId: Int, token: String): Connection {
     val userpageadresa = "https://www.xchat.cz/${token}/modchat?op=userspage&amp;rid=${roomId}&amp;cid=16&amp;js=1&amp;skin=2"
-    return Jsoup.connect(userpageadresa).timeout(50000)
+    return Jsoup.connect(userpageadresa).timeout(15000)
 }
 
 fun Document.getUserList(): List<ChatUser> {
@@ -148,5 +148,5 @@ fun Document.getUserList(): List<ChatUser> {
 
 fun ChatRepository.createGetRoomInfoRequest(roomId: Int, token: String): Connection {
     val infoPageAddress = "https://www.xchat.cz/${token}/modchat?op=infopage&skin=2&rid=${roomId}"
-    return Jsoup.connect(infoPageAddress).timeout(50000)
+    return Jsoup.connect(infoPageAddress).timeout(15000)
 }

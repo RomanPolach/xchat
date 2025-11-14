@@ -1,9 +1,7 @@
 package com.example.xchat2.chat
 
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleObserver
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.OnLifecycleEvent
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,182 +13,351 @@ import com.example.xchat2.util.State
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.UnknownHostException
-import java.util.*
 
-class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), LifecycleObserver {
-    private val _roomContent = MutableStateFlow(ChatRoomContent(roomHtmlState = State.Idle))
-    val roomContent: StateFlow<ChatRoomContent> = _roomContent
+data class ChatUiState(
+    val roomContent: ChatRoomContent = ChatRoomContent(roomHtmlState = State.Idle),
+    val isRefreshing: Boolean = false,
+    val message: String = "",
+    val currentChatroom: Chatroom? = null,
+    val lastHtmlState: String = "",
+    val showSuggestions: Boolean = false,
+    val filteredUsers: List<String> = emptyList(),
+    val userDropdownExpanded: Boolean = false,
+    val shouldShowToast: Event<String>? = null,
+    val shouldNavigateExit: Event<Boolean>? = null
+)
 
-    // Add this to track the subscription
+class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLifecycleObserver {
+    private val _uiState = MutableStateFlow(ChatUiState())
+    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
     private var currentRoomJob: Job? = null
-
-    private var currentChatroom: Chatroom? = null
-    private val _message = MutableStateFlow("")
-    val message: StateFlow<String> = _message
 
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
-    @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
-    fun onAppBackgrounded() {
-        cleanupRoom() // Clean up when the app goes to the background
+    override fun onStop(owner: LifecycleOwner) {
+        cleanupRoom()
     }
 
-    @OnLifecycleEvent(Lifecycle.Event.ON_START)
-    fun onAppForegrounded() {
-        currentChatroom?.let { chatroom -> 
-            enterRoom(chatroom)
+    override fun onStart(owner: LifecycleOwner) {
+        _uiState.value.currentChatroom?.let { chatroom ->
+            enterRoom(chatroom, restartPolling = true)
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun enterRoom(chatroom: Chatroom) {
-        // Cancel any existing subscription
-        currentRoomJob?.cancel()
-
-        currentChatroom = chatroom
-
-        // Emit loading state first
-        _roomContent.update { roomContent -> roomContent.copy(roomHtmlState = State.Loading) }
-
-        // Start new subscription
-        currentRoomJob = chatRepository.enterChatroom(chatroom)
-            .retryWhen { cause, attempt ->
-                cause is UnknownHostException && attempt < 3
-            }
-            .filter { it is State.Loaded }
-            .flatMapLatest {
-                chatRepository.subscribeRoomContent(chatroom)
-            }
-            .distinctUntilChanged()
-            .catch {
-                _roomContent.update { roomContent -> roomContent.copy(roomHtmlState = State.Error(it)) }
-            }
-            .onEach { content ->
-                if (content is State.Loaded) {
-                    _roomContent.update { roomContent -> roomContent.copy(roomHtmlState = State.Loaded(content.data)) }
-                    loadUsers(chatroom.id)
-                } else if (content is State.Error && content.error is IllegalAccessError) {
-                    tryRelogin(chatroom)
-                } else if (content is State.Error) {
-                    _roomContent.update { roomContent -> roomContent.copy(roomHtmlState = State.Error(content.error)) }
-                }
-            }
-            .launchIn(viewModelScope)
+    fun initializeRoom(roomId: Int, roomName: String) {
+        cleanupRoom()
+        enterRoom(Chatroom(roomId, roomName))
     }
 
-    // Add cleanup function
-    fun cleanupRoom() {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun enterRoom(chatroom: Chatroom, restartPolling: Boolean = true) {
+        if (_uiState.value.currentChatroom == chatroom && currentRoomJob?.isActive == true && !restartPolling) return
+
+        cleanupJobs()
+        _uiState.update {
+            it.copy(
+                currentChatroom = chatroom,
+                lastHtmlState = "",
+                isRefreshing = false,
+                roomContent = it.roomContent.copy(roomHtmlState = State.Loading)
+            )
+        }
+
+        currentRoomJob = viewModelScope.launch {
+            var retryAttempt = 0
+            var enterResult: State<Unit>? = null
+
+            while (retryAttempt < 3 && enterResult !is State.Loaded) {
+                enterResult = chatRepository.enterChatroom(chatroom)
+                when (enterResult) {
+                    is State.Loaded -> break
+                    is State.Error -> {
+                        if (enterResult.error is UnknownHostException && retryAttempt < 2) {
+                            retryAttempt++
+                            kotlinx.coroutines.delay(1000)
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    roomContent = it.roomContent.copy(roomHtmlState = State.Error(enterResult.error)),
+                                    isRefreshing = false
+                                )
+                            }
+                            return@launch
+                        }
+                    }
+
+                    else -> break
+                }
+            }
+
+            if (enterResult !is State.Loaded) {
+                return@launch
+            }
+
+            chatRepository.subscribeRoomContent(chatroom)
+                .catch { error ->
+                    _uiState.update {
+                        it.copy(
+                            roomContent = it.roomContent.copy(roomHtmlState = State.Error(error)),
+                            isRefreshing = false
+                        )
+                    }
+                }
+                .collect { state ->
+                    _uiState.update {
+                        it.copy(
+                            roomContent = it.roomContent.copy(roomHtmlState = state),
+                            lastHtmlState = if (state is State.Loaded) state.data else it.lastHtmlState,
+                            isRefreshing = false
+                        )
+                    }
+                    if (state is State.Loaded) {
+                        loadUsers(chatroom.id)
+                    }
+                }
+        }
+    }
+
+
+    fun refreshRoomContent() {
+        val currentChatroom = _uiState.value.currentChatroom ?: return
+        if (_uiState.value.isRefreshing) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val state = chatRepository.fetchRoomContentOnce(currentChatroom)
+            _uiState.update {
+                it.copy(
+                    roomContent = it.roomContent.copy(roomHtmlState = state),
+                    lastHtmlState = if (state is State.Loaded) state.data else it.lastHtmlState,
+                    isRefreshing = false
+                )
+            }
+            if (state is State.Loaded) {
+                loadUsers(currentChatroom.id)
+            }
+        }
+    }
+
+    private fun cleanupJobs() {
         currentRoomJob?.cancel()
         currentRoomJob = null
-        _roomContent.update { ChatRoomContent(roomHtmlState = State.Idle) }
+    }
+
+    fun cleanupRoom() {
+        cleanupJobs()
+        _uiState.value = ChatUiState()
+    }
+
+    fun updateLastHtmlState(html: String) {
+        _uiState.update { it.copy(lastHtmlState = html) }
+    }
+
+    private fun loadUsers(roomId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val users = chatRepository.getRoomUsers(roomId)
+            _uiState.update {
+                it.copy(roomContent = it.roomContent.copy(roomUsers = users))
+            }
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
-        currentRoomJob?.cancel()
+        cleanupRoom()
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
     }
 
-    private fun loadUsers(roomId: Int) {
-        chatRepository.getRoomUsers(roomId)
-            .catch {
-            }
-            .onEach {
-                _roomContent.update { roomContent -> roomContent.copy(roomUsers = it) }
-            }.launchIn(viewModelScope)
-    }
-
-
-    private suspend fun tryRelogin(chatroom: Chatroom) {
-        chatRepository.tryLoginWithSavedInfo().collect()
-        chatRepository.enterChatroom(chatroom).collect()
-    }
-
     fun saveRoomToFavourites(selectedRoom: Chatroom) {
-        chatRepository.saveRoomToFavourites(selectedRoom)
-            .onEach {
-                _roomContent.update { roomContent -> roomContent.copy(favouriteRoomSaved = Event(true)) }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            chatRepository.saveRoomToFavourites(selectedRoom)
+            _uiState.update {
+                it.copy(
+                    roomContent = it.roomContent.copy(favouriteRoomSaved = Event(true)),
+                    shouldShowToast = Event("Room saved to favourites"),
+                    isRefreshing = false
+                )
             }
-            .launchIn(viewModelScope)
+        }
     }
 
     fun onMessageChange(message: String) {
-       _message.value = message
+        val showSuggestions = message.isNotEmpty() && message.length in 3..8
+        val filteredUsers = if (showSuggestions) {
+            _uiState.value.roomContent.roomUsers.filter { it.startsWith(message, ignoreCase = true) }
+        } else {
+            emptyList()
+        }
+        _uiState.update {
+            it.copy(
+                message = message,
+                showSuggestions = filteredUsers.isNotEmpty(),
+                filteredUsers = filteredUsers
+            )
+        }
     }
 
     fun onSelectedUserChange(user: String) {
-        _roomContent.update { roomContent -> roomContent.copy(selectedUser = user) }
+        _uiState.update {
+            it.copy(
+                roomContent = it.roomContent.copy(selectedUser = user),
+                userDropdownExpanded = false
+            )
+        }
+    }
+
+    fun onUserDropdownExpandedChange(expanded: Boolean) {
+        _uiState.update { it.copy(userDropdownExpanded = expanded) }
+    }
+
+    fun onSuggestionClick(user: String) {
+        _uiState.update {
+            it.copy(
+                message = "$user: ",
+                showSuggestions = false,
+                filteredUsers = emptyList()
+            )
+        }
     }
 
     fun onSmileClick(smile: Int) {
-        _message.value += (" *$smile* ")
+        _uiState.update { it.copy(message = it.message + " *$smile* ") }
     }
 
     fun sendMessage(roomId: Int) {
-        val currentContent = roomContent.value ?: return
-        val baseMessage = _message.value
-        val user = currentContent.selectedUser
+        val currentState = _uiState.value
+        val baseMessage = currentState.message
+        if (baseMessage.isBlank()) return
 
-        // Prepend "/m username" if a user is selected instead of "all users"
+        val user = currentState.roomContent.selectedUser
         val finalMessage = if (user != "Všem") {
             "/m $user $baseMessage"
         } else {
             baseMessage
         }
 
-        chatRepository.sendMessage(finalMessage, roomId)
-            .catch {
-                // Nothing to do here
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val result = chatRepository.sendMessage(finalMessage, roomId)
+            when (result) {
+                is State.Loaded -> {
+                    _uiState.update { it.copy(message = "", isRefreshing = false) }
+                }
+
+                is State.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            shouldShowToast = Event("Failed to send message: ${result.error.message}"),
+                            isRefreshing = false
+                        )
+                    }
+                }
+
+                is State.Loading -> {
+                    _uiState.update { it.copy(isRefreshing = true) }
+                }
+
+                else -> {
+                    _uiState.update { it.copy(isRefreshing = false) }
+                }
             }
-            .onEach {
-                // Clear message text after sending
-               _message.value = ""
-            }
-            .launchIn(viewModelScope)
+        }
     }
 
     fun getUserList(id: Int) {
-        chatRepository.getRoomInfo(id)
-            .catch {
-// Nothing to do here
-            }
-            .onEach {
-                if (it is State.Loaded) {
-                    _roomContent.update { roomContent -> roomContent.copy(chatBottomSheetState = it.data) }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val state = chatRepository.getRoomInfo(id)
+            when (state) {
+                is State.Loaded -> {
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            roomContent = currentState.roomContent.copy(chatBottomSheetState = state.data),
+                            isRefreshing = false
+                        )
+                    }
+                }
+
+                is State.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            shouldShowToast = Event("Failed to load room info: ${state.error.message}"),
+                            isRefreshing = false
+                        )
+                    }
+                }
+
+                is State.Loading -> {
+                    _uiState.update { it.copy(isRefreshing = true) }
+                }
+
+                else -> {
+                    _uiState.update { it.copy(isRefreshing = false) }
                 }
             }
-            .launchIn(viewModelScope)
+        }
     }
 
     fun onSmilesClick() {
-       _roomContent.update { roomContent -> roomContent.copy(chatBottomSheetState = ChatBottomSheetState.SmileScreen()) }
+        _uiState.update { it.copy(roomContent = it.roomContent.copy(chatBottomSheetState = ChatBottomSheetState.SmileScreen())) }
     }
 
     fun onCloseBottomSheetClick() {
-        _roomContent.update { roomContent -> roomContent.copy(chatBottomSheetState = ChatBottomSheetState.Closed) }
+        _uiState.update { it.copy(roomContent = it.roomContent.copy(chatBottomSheetState = ChatBottomSheetState.Closed)) }
+    }
+
+    fun onToastShown() {
+        _uiState.update { it.copy(shouldShowToast = null) }
+    }
+
+    fun onExitHandled() {
+        _uiState.update { it.copy(shouldNavigateExit = null) }
     }
 
     fun exitRoom(selectedRoom: Chatroom) {
-        chatRepository.exitRoom(selectedRoom)
-            .onEach {
-                if (it is State.Error) {
-                    _roomContent.update { roomContent ->
-                        roomContent.copy(roomExitState = Event.createEvent(false))
-                    }
-                } else if (it is State.Loaded) {
-                    cleanupRoom() // Add this line
-                    _roomContent.update { roomContent ->
-                        roomContent.copy(roomExitState = Event.createEvent(true))
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val result = chatRepository.exitRoom(selectedRoom)
+            when (result) {
+                is State.Error -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            roomContent = state.roomContent.copy(roomExitState = Event.createEvent(false)),
+                            shouldShowToast = Event("Failed to exit room"),
+                            isRefreshing = false
+                        )
                     }
                 }
+
+                is State.Loaded -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            shouldNavigateExit = Event(true),
+                            isRefreshing = false
+                        )
+                    }
+                }
+
+                is State.Loading -> {
+                    _uiState.update { it.copy(isRefreshing = true) }
+                }
+
+                else -> {
+                    _uiState.update { it.copy(isRefreshing = false) }
+                }
             }
-            .launchIn(viewModelScope)
+        }
     }
 }
