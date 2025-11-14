@@ -1,5 +1,7 @@
 package com.example.xchat2.chat
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -25,7 +27,7 @@ const val ALL_USERS = "Všem"
 data class ChatUiState(
     val roomContent: ChatRoomContent = ChatRoomContent(roomHtmlState = State.Idle),
     val isRefreshing: Boolean = false,
-    val message: String = "",
+    val messageTextFieldValue: TextFieldValue = TextFieldValue(""),
     val currentChatroom: Chatroom? = null,
     val lastHtmlState: String = "",
     val showSuggestions: Boolean = false,
@@ -188,7 +190,8 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         }
     }
 
-    fun onMessageChange(message: String) {
+    fun onMessageChange(textFieldValue: TextFieldValue) {
+        val message = textFieldValue.text
         val showSuggestions = message.isNotEmpty() && message.length in 3..8
         val filteredUsers = if (showSuggestions) {
             _uiState.value.roomContent.roomUsers.filter { it.startsWith(message, ignoreCase = true) }
@@ -197,7 +200,7 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         }
         _uiState.update {
             it.copy(
-                message = message,
+                messageTextFieldValue = textFieldValue,
                 showSuggestions = filteredUsers.isNotEmpty(),
                 filteredUsers = filteredUsers
             )
@@ -218,9 +221,10 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     }
 
     fun onSuggestionClick(user: String) {
+        val newText = "$user: "
         _uiState.update {
             it.copy(
-                message = "$user: ",
+                messageTextFieldValue = TextFieldValue(newText, TextRange(newText.length)),
                 showSuggestions = false,
                 filteredUsers = emptyList()
             )
@@ -228,12 +232,21 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     }
 
     fun onSmileClick(smile: Int) {
-        _uiState.update { it.copy(message = it.message + " *$smile* ") }
+        val currentValue = _uiState.value.messageTextFieldValue
+        val newText = currentValue.text + " *$smile* "
+        _uiState.update {
+            it.copy(
+                messageTextFieldValue = TextFieldValue(
+                    newText,
+                    TextRange(newText.length)
+                )
+            )
+        }
     }
 
     fun sendMessage(roomId: Int) {
         val currentState = _uiState.value
-        val baseMessage = currentState.message
+        val baseMessage = currentState.messageTextFieldValue.text
         if (baseMessage.isBlank()) return
 
         val user = currentState.roomContent.selectedUser
@@ -248,7 +261,12 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
             val result = chatRepository.sendMessage(finalMessage, roomId)
             when (result) {
                 is State.Loaded -> {
-                    _uiState.update { it.copy(message = "", isRefreshing = false) }
+                    _uiState.update {
+                        it.copy(
+                            messageTextFieldValue = TextFieldValue(""),
+                            isRefreshing = false
+                        )
+                    }
                 }
                 is State.Error -> {
                     _uiState.update {

@@ -61,17 +61,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -161,15 +158,6 @@ fun ChatScreen(
         }
     }
 
-    var textFieldValue by remember {
-        mutableStateOf(TextFieldValue(text = uiState.message, selection = TextRange(uiState.message.length)))
-    }
-
-    SideEffect {
-        if (textFieldValue.text != uiState.message) {
-            textFieldValue = TextFieldValue(text = uiState.message, selection = TextRange(uiState.message.length))
-        }
-    }
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
@@ -342,12 +330,9 @@ fun ChatScreen(
 
                             OutlinedTextField(
                                 colors = TextFieldDefaults.colors(focusedTextColor = Color.Black, unfocusedTextColor = Color.Black),
-                                value = textFieldValue,
+                                value = uiState.messageTextFieldValue,
                                 singleLine = true,
-                                onValueChange = { value ->
-                                    textFieldValue = value
-                                    viewModel.onMessageChange(value.text)
-                                },
+                                onValueChange = { viewModel.onMessageChange(it) },
                                 placeholder = { Text("Poslat zprávu") },
                                 modifier = Modifier
                                     .weight(2f)
