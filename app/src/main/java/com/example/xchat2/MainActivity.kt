@@ -1,7 +1,6 @@
 // MainActivity.kt
 package com.example.xchat2
 
-import FavouriteRoomsViewModel
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,6 +14,7 @@ import com.example.xchat2.chat.RoomListScreen
 import com.example.xchat2.chat.RoomListViewModel
 import com.example.xchat2.ui.main.MainScreen
 import com.example.xchat2.ui.main.MainViewModel
+import com.example.xchat2.ui.main.favourite.FavouriteRoomsViewModel
 import com.example.xchat2.ui.main.login.LoginViewModel
 import org.koin.androidx.compose.koinViewModel
 

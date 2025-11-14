@@ -55,7 +55,6 @@ import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -112,11 +111,8 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsState()
     val roomContent = uiState.roomContent
 
-    LaunchedEffect(roomId, roomName) {
+    DisposableEffect(roomId, roomName) {
         viewModel.initializeRoom(roomId, roomName)
-    }
-
-    DisposableEffect(roomId) {
         onDispose {
             viewModel.cleanupRoom()
         }
@@ -165,8 +161,14 @@ fun ChatScreen(
         }
     }
 
-    var textFieldValue by remember(uiState.message) {
+    var textFieldValue by remember {
         mutableStateOf(TextFieldValue(text = uiState.message, selection = TextRange(uiState.message.length)))
+    }
+
+    SideEffect {
+        if (textFieldValue.text != uiState.message) {
+            textFieldValue = TextFieldValue(text = uiState.message, selection = TextRange(uiState.message.length))
+        }
     }
 
     BottomSheetScaffold(
@@ -226,22 +228,29 @@ fun ChatScreen(
                                 webView
                             },
                             update = { webView ->
-                                val htmlToLoad = when (val state = roomContent.roomHtmlState) {
-                                    is State.Loaded -> state.data
-                                    is State.Loading -> "<html><body><h3>Načítám...</h3></body></html>"
-                                    else -> null
-                                }
-                                htmlToLoad?.let { html ->
-                                    webView.loadDataWithBaseURL(
-                                        null,
-                                        html,
-                                        "text/html",
-                                        "UTF-8",
-                                        null
-                                    )
-                                    if (roomContent.roomHtmlState is State.Loaded) {
-                                        viewModel.updateLastHtmlState((roomContent.roomHtmlState as State.Loaded).data)
+                                when (val state = roomContent.roomHtmlState) {
+                                    is State.Loaded -> {
+                                        val html = state.data
+                                        webView.loadDataWithBaseURL(
+                                            null,
+                                            html,
+                                            "text/html",
+                                            "UTF-8",
+                                            null
+                                        )
                                     }
+
+                                    is State.Loading -> {
+                                        webView.loadDataWithBaseURL(
+                                            null,
+                                            "<html><body><h3>Načítám...</h3></body></html>",
+                                            "text/html",
+                                            "UTF-8",
+                                            null
+                                        )
+                                    }
+
+                                    else -> {}
                                 }
                             },
                             modifier = Modifier
@@ -317,7 +326,7 @@ fun ChatScreen(
                                     expanded = uiState.userDropdownExpanded,
                                     onDismissRequest = { viewModel.onUserDropdownExpandedChange(false) }
                                 ) {
-                                    val userList = listOf("Všem") + roomContent.roomUsers
+                                    val userList = listOf(com.example.xchat2.chat.ALL_USERS) + roomContent.roomUsers
                                     userList.forEach { user ->
                                         DropdownMenuItem(
                                             text = { Text(user) },

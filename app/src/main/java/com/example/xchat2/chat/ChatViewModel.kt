@@ -10,7 +10,6 @@ import com.example.xchat2.ui.main.repos.ChatRoomContent
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.Event
 import com.example.xchat2.util.State
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +19,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.UnknownHostException
+
+const val ALL_USERS = "Všem"
 
 data class ChatUiState(
     val roomContent: ChatRoomContent = ChatRoomContent(roomHtmlState = State.Idle),
@@ -39,7 +40,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var currentRoomJob: Job? = null
-
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
@@ -96,7 +96,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                             return@launch
                         }
                     }
-
                     else -> break
                 }
             }
@@ -160,12 +159,8 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         _uiState.value = ChatUiState()
     }
 
-    fun updateLastHtmlState(html: String) {
-        _uiState.update { it.copy(lastHtmlState = html) }
-    }
-
     private fun loadUsers(roomId: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val users = chatRepository.getRoomUsers(roomId)
             _uiState.update {
                 it.copy(roomContent = it.roomContent.copy(roomUsers = users))
@@ -242,7 +237,7 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         if (baseMessage.isBlank()) return
 
         val user = currentState.roomContent.selectedUser
-        val finalMessage = if (user != "Všem") {
+        val finalMessage = if (user != ALL_USERS) {
             "/m $user $baseMessage"
         } else {
             baseMessage
@@ -255,7 +250,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                 is State.Loaded -> {
                     _uiState.update { it.copy(message = "", isRefreshing = false) }
                 }
-
                 is State.Error -> {
                     _uiState.update {
                         it.copy(
@@ -264,11 +258,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         )
                     }
                 }
-
-                is State.Loading -> {
-                    _uiState.update { it.copy(isRefreshing = true) }
-                }
-
                 else -> {
                     _uiState.update { it.copy(isRefreshing = false) }
                 }
@@ -289,7 +278,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         )
                     }
                 }
-
                 is State.Error -> {
                     _uiState.update {
                         it.copy(
@@ -298,11 +286,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         )
                     }
                 }
-
-                is State.Loading -> {
-                    _uiState.update { it.copy(isRefreshing = true) }
-                }
-
                 else -> {
                     _uiState.update { it.copy(isRefreshing = false) }
                 }
@@ -340,7 +323,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         )
                     }
                 }
-
                 is State.Loaded -> {
                     _uiState.update { state ->
                         state.copy(
@@ -349,11 +331,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         )
                     }
                 }
-
-                is State.Loading -> {
-                    _uiState.update { it.copy(isRefreshing = true) }
-                }
-
                 else -> {
                     _uiState.update { it.copy(isRefreshing = false) }
                 }

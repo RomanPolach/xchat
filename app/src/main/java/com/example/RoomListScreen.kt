@@ -46,8 +46,9 @@ fun RoomListScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState.selectedRoomState) {
-        if (uiState.selectedRoomState is State.Loaded) {
-            val data = (uiState.selectedRoomState as State.Loaded<SelectedRoomState>).data
+        val selectedState = uiState.selectedRoomState
+        if (selectedState is State.Loaded) {
+            val data = selectedState.data
             if (data.selectedRoom == null) return@LaunchedEffect
             viewModel.resetSelectedRoom()
             onRoomSelected(data.selectedRoom, data.logged)
@@ -81,9 +82,9 @@ fun RoomListScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            when (uiState.roomsState) {
+            when (val roomsState = uiState.roomsState) {
                 is State.Loaded -> {
-                    val rooms = (uiState.roomsState as State.Loaded<List<Chatroom>>).data
+                    val rooms = roomsState.data
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()

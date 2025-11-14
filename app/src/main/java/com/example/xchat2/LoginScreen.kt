@@ -24,6 +24,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -107,8 +108,10 @@ fun LoginScreen(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
 
-                if (uiState.loginState is State.Loaded) {
+                LaunchedEffect(uiState.loginState) {
+                    if (uiState.loginState is State.Loaded) {
                         onLoginSuccess()
+                    }
                 }
 
                 if (uiState.loginState is State.Error) {

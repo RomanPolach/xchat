@@ -1,9 +1,9 @@
 package com.example.xchat2.ui.main.repos
 
+import com.example.xchat2.chat.ALL_USERS
 import com.example.xchat2.chat.ChatBottomSheetState
 import com.example.xchat2.util.Event
 import com.example.xchat2.util.State
-import kotlin.String
 
 data class ChatRoomContent(
     val roomHtmlState: State<String>,
@@ -12,5 +12,5 @@ data class ChatRoomContent(
     val retryingTimeout: Event<Boolean?> = Event.createDefaultState(),
     var chatBottomSheetState: ChatBottomSheetState = ChatBottomSheetState.Closed,
     val roomUsers: List<String> = emptyList(),
-    val selectedUser: String = "Všem"
+    val selectedUser: String = ALL_USERS
 )

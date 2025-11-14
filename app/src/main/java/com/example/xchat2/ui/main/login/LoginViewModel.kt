@@ -5,10 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.xchat2.ui.main.db.User
 import com.example.xchat2.ui.main.repos.ChatRepository
 import com.example.xchat2.util.State
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class LoginUiState(
@@ -23,19 +23,20 @@ class LoginViewModel(private val chatRepository: ChatRepository) : ViewModel() {
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     fun onUsernameChange(username: String) {
-        _uiState.value = _uiState.value.copy(username = username)
+        _uiState.update { it.copy(username = username) }
     }
 
     fun onPasswordChange(password: String) {
-        _uiState.value = _uiState.value.copy(password = password)
+        _uiState.update { it.copy(password = password) }
     }
 
     fun login() {
-        val currentState = _uiState.value
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = currentState.copy(loginState = State.Loading)
-            val state = chatRepository.login(currentState.username, currentState.password)
-            _uiState.value = currentState.copy(loginState = state)
+        viewModelScope.launch {
+            _uiState.update { it.copy(loginState = State.Loading) }
+            val username = _uiState.value.username
+            val password = _uiState.value.password
+            val state = chatRepository.login(username, password)
+            _uiState.update { it.copy(loginState = state) }
         }
     }
 }

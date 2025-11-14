@@ -69,7 +69,6 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     private var sendToken: String = ""
 
-    @Suppress("BlockingMethodInNonBlockingContext")
     override suspend fun login(name: String, password: String): State<User> {
         val response = createLoginRequest(name, password).execute()
 
@@ -121,25 +120,23 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     override suspend fun getRoomList(): State<List<Chatroom>> {
         return withContext(Dispatchers.IO) {
-            var attempt = 0
-            while (attempt < 3) {
+            var lastException: IOException? = null
+            repeat(3) { attempt ->
                 try {
                     val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php")
                         .timeout(10000)
                         .get()
                     return@withContext State.Loaded(page.toRoomList())
                 } catch (e: IOException) {
-                    attempt++
-                    if (attempt < 3) {
+                    lastException = e
+                    if (attempt < 2) {
                         delay(2000)
-                    } else {
-                        return@withContext State.Error(e)
                     }
                 } catch (e: Exception) {
                     return@withContext State.Error(e)
                 }
             }
-            State.Error(IOException("Failed to fetch room list after 3 attempts"))
+            State.Error(lastException ?: IOException("Failed to fetch room list after 3 attempts"))
         }
     }
 

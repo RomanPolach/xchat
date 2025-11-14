@@ -1,7 +1,5 @@
-// FavouriteRoomsScreen.kt
 package com.example.xchat2
 
-import FavouriteRoomsViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,18 +27,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.xchat2.ui.main.favourite.FavouriteRoomsViewModel
+import com.example.xchat2.ui.main.favourite.toChatRoomList
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.ui.main.repos.FavouriteRoomsState
-import toChatRoomList
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,14 +70,11 @@ fun FavouriteRoomsScreen(
                 brush = Brush.verticalGradient(
                     colors = listOf(Color(0xD2188EFE), Color(0xD29BD4FF))
                 )
-            )){
-            var searchQuery by remember { mutableStateOf("") }
+            )
+        ) {
             OutlinedTextField(
-                value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                    viewModel.setSearchQuery(it)
-                },
+                value = uiState.searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
                 label = { Text("Hledej") },
                 modifier = Modifier
                     .fillMaxWidth()

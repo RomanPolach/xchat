@@ -41,10 +41,12 @@ fun MainScreen(
     val context = LocalContext.current
 
     val statusText = when (state) {
-        is State.Loaded<User> -> "Přihlášen:\n${(state as State.Loaded<User>).data.name}"
+        is State.Loaded -> "Přihlášen:\n${(state as State.Loaded<User>).data.name}"
         is State.Error -> "Stav:\nNepřihlášen"
         else -> "Stav:\n Nepřihlášen"
     }
+
+    val isLoggedIn = state is State.Loaded
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -79,7 +81,7 @@ fun MainScreen(
             Spacer(Modifier.height(30.dp))
             Button(
                 onClick = {
-                    if (viewModel.isLoggedIn()) {
+                    if (isLoggedIn) {
                         onRoomListClick()
                     } else {
                         Toast.makeText(context, "Pro přístup se musíte přihlásit", Toast.LENGTH_SHORT).show()
@@ -94,7 +96,7 @@ fun MainScreen(
             Spacer(Modifier.height(30.dp))
             Button(
                 onClick = {
-                    if (viewModel.isLoggedIn()) {
+                    if (isLoggedIn) {
                         onFavouritesClick()
                     } else {
                         Toast.makeText(context, "Pro přístup se musíte přihlásit", Toast.LENGTH_SHORT).show()

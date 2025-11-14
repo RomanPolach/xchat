@@ -1,3 +1,5 @@
+package com.example.xchat2.ui.main.favourite
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.xchat2.ui.main.db.UserFavouriteRoom
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class FavouriteRoomsUiState(
@@ -34,7 +37,7 @@ class FavouriteRoomsViewModel(private val chatRepository: ChatRepository) : View
     private fun loadFavouriteRooms() {
         viewModelScope.launch {
             val favouriteRoomsState = chatRepository.getFavouriteRooms()
-            _uiState.value = _uiState.value.copy(favouriteRoomsState = favouriteRoomsState)
+            _uiState.update { it.copy(favouriteRoomsState = favouriteRoomsState) }
         }
     }
 
@@ -47,14 +50,14 @@ class FavouriteRoomsViewModel(private val chatRepository: ChatRepository) : View
             .onEach { search ->
                 viewModelScope.launch {
                     val filterRoomsState = chatRepository.searchRooms(search)
-                    _uiState.value = _uiState.value.copy(filterRoomsState = filterRoomsState)
+                    _uiState.update { it.copy(filterRoomsState = filterRoomsState) }
                 }
             }
             .launchIn(viewModelScope)
     }
 
     fun setSearchQuery(search: String) {
-        _uiState.value = _uiState.value.copy(searchQuery = search)
+        _uiState.update { it.copy(searchQuery = search) }
     }
 }
 
