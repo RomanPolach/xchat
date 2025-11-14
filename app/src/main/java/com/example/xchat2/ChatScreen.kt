@@ -55,12 +55,11 @@ import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,7 +79,6 @@ import com.example.xchat2.chat.ChatViewModel
 import com.example.xchat2.chat.Sex
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.State
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,24 +118,15 @@ fun ChatScreen(
         skipHiddenState = false
     )
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = bottomSheetState)
-    val coroutineScope = rememberCoroutineScope()
-    val lastHandledState = remember { mutableStateOf<ChatBottomSheetState?>(null) }
 
-    SideEffect {
-        if (lastHandledState.value != roomContent.chatBottomSheetState) {
-            lastHandledState.value = roomContent.chatBottomSheetState
-            when (roomContent.chatBottomSheetState) {
-                is ChatBottomSheetState.Closed -> {
-                    coroutineScope.launch {
-                        bottomSheetState.hide()
-                    }
-                }
+    LaunchedEffect(roomContent.chatBottomSheetState) {
+        when (roomContent.chatBottomSheetState) {
+            is ChatBottomSheetState.Closed -> {
+                bottomSheetState.hide()
+            }
 
-                else -> {
-                    coroutineScope.launch {
-                        bottomSheetState.expand()
-                    }
-                }
+            else -> {
+                bottomSheetState.expand()
             }
         }
     }
@@ -151,10 +140,8 @@ fun ChatScreen(
 
     SideEffect {
         uiState.shouldNavigateExit?.getContentIfNotHandled()?.let {
-            if (it) {
-                onExit()
-                viewModel.onExitHandled()
-            }
+            onExit()
+            viewModel.onExitHandled()
         }
     }
 
