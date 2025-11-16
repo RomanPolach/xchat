@@ -12,6 +12,7 @@ import com.example.xchat2.ui.main.repos.ChatRoomContent
 import com.example.xchat2.ui.main.repos.Chatroom
 import com.example.xchat2.util.Event
 import com.example.xchat2.util.State
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,7 +49,8 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        cleanupRoom()
+        // Only cancel jobs, don't clear state to preserve currentChatroom
+        cleanupJobs()
     }
 
     override fun onStart(owner: LifecycleOwner) {
@@ -130,19 +132,16 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         }
     }
 
-
     fun refreshRoomContent() {
         val currentChatroom = _uiState.value.currentChatroom ?: return
         if (_uiState.value.isRefreshing) return
 
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
+        viewModelScope.launchRefreshing {
             val state = chatRepository.fetchRoomContentOnce(currentChatroom)
             _uiState.update {
                 it.copy(
                     roomContent = it.roomContent.copy(roomHtmlState = state),
-                    lastHtmlState = if (state is State.Loaded) state.data else it.lastHtmlState,
-                    isRefreshing = false
+                    lastHtmlState = if (state is State.Loaded) state.data else it.lastHtmlState
                 )
             }
             if (state is State.Loaded) {
@@ -161,13 +160,11 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
         _uiState.value = ChatUiState()
     }
 
-    private fun loadUsers(roomId: Int) {
-        viewModelScope.launch {
+    private suspend fun loadUsers(roomId: Int) {
             val users = chatRepository.getRoomUsers(roomId)
             _uiState.update {
                 it.copy(roomContent = it.roomContent.copy(roomUsers = users))
             }
-        }
     }
 
     override fun onCleared() {
@@ -177,14 +174,12 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     }
 
     fun saveRoomToFavourites(selectedRoom: Chatroom) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
+        viewModelScope.launchRefreshing {
             chatRepository.saveRoomToFavourites(selectedRoom)
             _uiState.update {
                 it.copy(
                     roomContent = it.roomContent.copy(favouriteRoomSaved = Event(true)),
-                    shouldShowToast = Event("Room saved to favourites"),
-                    isRefreshing = false
+                    shouldShowToast = Event("Room saved to favourites")
                 )
             }
         }
@@ -256,15 +251,13 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
             baseMessage
         }
 
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
+        viewModelScope.launchRefreshing {
             val result = chatRepository.sendMessage(finalMessage, roomId)
             when (result) {
                 is State.Loaded -> {
                     _uiState.update {
                         it.copy(
                             messageTextFieldValue = TextFieldValue(""),
-                            isRefreshing = false
                         )
                     }
                 }
@@ -272,47 +265,63 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                     _uiState.update {
                         it.copy(
                             shouldShowToast = Event("Failed to send message: ${result.error.message}"),
-                            isRefreshing = false
                         )
                     }
                 }
                 else -> {
-                    _uiState.update { it.copy(isRefreshing = false) }
-                }
-            }
-        }
-    }
-
-    fun getUserList(id: Int) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
-            val state = chatRepository.getRoomInfo(id)
-            when (state) {
-                is State.Loaded -> {
-                    _uiState.update { currentState ->
-                        currentState.copy(
-                            roomContent = currentState.roomContent.copy(chatBottomSheetState = state.data),
-                            isRefreshing = false
-                        )
-                    }
-                }
-                is State.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            shouldShowToast = Event("Failed to load room info: ${state.error.message}"),
-                            isRefreshing = false
-                        )
-                    }
-                }
-                else -> {
-                    _uiState.update { it.copy(isRefreshing = false) }
+                    // No-op
                 }
             }
         }
     }
 
     fun onSmilesClick() {
-        _uiState.update { it.copy(roomContent = it.roomContent.copy(chatBottomSheetState = ChatBottomSheetState.SmileScreen())) }
+        _uiState.update { currentState ->
+            val current = currentState.roomContent.chatBottomSheetState
+            currentState.copy(
+                roomContent = currentState.roomContent.copy(
+                    chatBottomSheetState = if (current is ChatBottomSheetState.SmileScreen) {
+                        ChatBottomSheetState.Closed
+                    } else {
+                        ChatBottomSheetState.SmileScreen()
+                    }
+                )
+            )
+        }
+    }
+
+    fun getUserList(id: Int) {
+        val current = _uiState.value.roomContent.chatBottomSheetState
+        if (current is ChatBottomSheetState.RoomInfo) {
+            _uiState.update { it.copy(roomContent = it.roomContent.copy(chatBottomSheetState = ChatBottomSheetState.Closed)) }
+        } else {
+            viewModelScope.launchRefreshing {
+                val state = chatRepository.getRoomInfo(id)
+                when (state) {
+                    is State.Loaded -> {
+                        _uiState.update { currentState ->
+                            currentState.copy(
+                                roomContent = currentState.roomContent.copy(
+                                    chatBottomSheetState = state.data
+                                )
+                            )
+                        }
+                    }
+
+                    is State.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                shouldShowToast = Event("Failed to load room info: ${state.error.message}"),
+                            )
+                        }
+                    }
+
+                    else -> {
+                        // No-op
+                    }
+                }
+            }
+        }
     }
 
     fun onCloseBottomSheetClick() {
@@ -328,8 +337,7 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
     }
 
     fun exitRoom(selectedRoom: Chatroom) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
+        viewModelScope.launchRefreshing {
             val result = chatRepository.exitRoom(selectedRoom)
             when (result) {
                 is State.Error -> {
@@ -337,7 +345,6 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                         state.copy(
                             roomContent = state.roomContent.copy(roomExitState = Event.createEvent(false)),
                             shouldShowToast = Event("Failed to exit room"),
-                            isRefreshing = false
                         )
                     }
                 }
@@ -345,14 +352,20 @@ class ChatViewModel(val chatRepository: ChatRepository) : ViewModel(), DefaultLi
                     _uiState.update { state ->
                         state.copy(
                             shouldNavigateExit = Event(true),
-                            isRefreshing = false
                         )
                     }
                 }
                 else -> {
-                    _uiState.update { it.copy(isRefreshing = false) }
+                    // No-op
                 }
             }
         }
+    }
+
+    private fun CoroutineScope.launchRefreshing(block: suspend CoroutineScope.() -> Unit): Job {
+        _uiState.update { it.copy(isRefreshing = true) }
+        val job = launch(block = block)
+        job.invokeOnCompletion { _uiState.update { it.copy(isRefreshing = false) } }
+        return job
     }
 }
