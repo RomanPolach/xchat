@@ -4,71 +4,126 @@ import com.example.xchat2.chat.ChatUser
 import com.example.xchat2.chat.Sex
 import com.example.xchat2.ui.main.repos.ChatRepository
 import com.example.xchat2.ui.main.repos.Chatroom
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jsoup.Connection
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URLDecoder
 import java.util.regex.Matcher
 
-fun ChatRepository.createLoginRequest(name: String, password: String) =
-    Jsoup.connect("https://www.xchat.cz/login/")
-        .userAgent("Mozilla/5.0")
-        .timeout(15000)
-        .method(Connection.Method.POST)
-        .followRedirects(false)
-        .data("js", "1")
-        .data("name", name)
-        .data("pass", password)
-        .data("x", "0")
-        .data("y", "0")
+/**
+ * Centralized constants for XChat API scraping.
+ * Tune here if site changes (e.g., params, UA, timeouts).
+ */
+object ChatApiConstants {
 
-fun Connection.Response.isSucessful(): Boolean {
-    return hasHeader("location")
+    const val GUEST_INDEX_PATH = "/~guest~/index.php"
+    const val BASE_URL = "https://www.xchat.cz"
+    const val TIMEOUT_MS = 15000L
+    const val USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.10240"
+    const val JS_PARAM = "1"
+    const val SKIN_PARAM = "2"
+
+    // Common query params
+    val COMMON_PARAMS = mapOf(
+        "js" to JS_PARAM,
+        "skin" to SKIN_PARAM
+    )
+
+    // Login-specific
+    val LOGIN_PATH = "/login/"
+    val LOGIN_EXTRA_PARAMS = mapOf(
+        "x" to "0",
+        "y" to "0"
+    )
+
+    // Room enter/info
+    const val TOKEN_ROOM_INTRO = "/{token}/room/intro.php"
+    val ENTER_EXTRA_PARAMS = mapOf(
+        "sexwarn" to "1",
+        "disclaim" to "1",
+        "_btn_enter" to "wanna_enter_man%3F"
+    )
+
+    const val ROOM_CONTENT_PATH = "/{token}/modchat"
+    const val ROOM_CONTENT_QUERY = "?op=roomtopng&rid={roomId}"
+
+    const val SEND_MESSAGE_PATH = "/{token}/modchat"
+    val SEND_MESSAGE_PARAMS = mapOf(
+        "op" to "textpageng",
+        "aid" to "0",
+        "target" to "~",
+        "submit_text" to "Poslat"
+    )
+    const val SEND_MESSAGE_CHARSET = "ISO-8859-2"
+
+    const val EXIT_ROOM_QUERY = "?op=mainframeset&menuaction=leave&leftroom={roomId}&cid=16"
+    const val SEND_TOKEN_QUERY = "?op=textpageng&rid={roomId}"
+    const val USER_LIST_QUERY = "?op=userspage&rid={roomId}&cid=16"
+    const val ROOM_INFO_QUERY = "?op=infopage&rid={roomId}"
 }
 
-fun Connection.Response.getUserHashtag(): String {
-    val temp = header("location").toString()
-    val start = temp.indexOf("~")
-    val end = temp.indexOf("/", start)
-    val finalni = temp.substring(start, end)
-    return finalni
-}
-
-fun Document.toRoomList(): List<Chatroom> {
-    val element = getElementById("room")
-    val rooms: String = element.toString()
-    val regex = Regex("(\\d{6,8})\">(.*?) \\((\\d*?)\\)</option")
-    val matches = regex.findAll(rooms)
-    val roomlist = mutableListOf<Chatroom>()
-    matches.forEach {
-        it.groupValues.getOrNull(1)?.let { id ->
-            val roomka = Chatroom(id.toInt(), it.groupValues.get(2), it.groupValues.get(3))
-            roomlist.add(roomka)
+/**
+ * Suspend extension helpers for Jsoup network calls on IO dispatcher.
+ * All sync Jsoup calls wrapped to be non-blocking.
+ */
+suspend fun ChatRepository.jsoupRequest(
+    path: String,
+    method: Connection.Method = Connection.Method.GET,
+    extraData: Map<String, String> = emptyMap(),
+    postCharset: String? = null,
+    followRedirects: Boolean = true
+): Connection.Response = withContext(Dispatchers.IO) {
+    Jsoup.connect(ChatApiConstants.BASE_URL + path)
+        .userAgent(ChatApiConstants.USER_AGENT)
+        .timeout(ChatApiConstants.TIMEOUT_MS.toInt())
+        .method(method)
+        .followRedirects(followRedirects)
+        .apply {
+            extraData.forEach { (k, v) -> data(k, v) }
+            postCharset?.let { postDataCharset(it) }
         }
-    }
-    return roomlist
+        .execute()
 }
 
-fun ChatRepository.createEnterRoomRequest(token: String, roomId: Int): Connection {
-    val dest = "https://www.xchat.cz/$token/room/intro.php?rid=$roomId&sexwarn=1&disclaim=1&_btn_enter=wanna_enter_man%3F"
-
-    val response = Jsoup.connect(dest)
-        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.10240")
-        .timeout(15000)
-        .method(Connection.Method.GET)
-        .followRedirects(true)
-    return response
+suspend fun Connection.Response.isSuccessful(): Boolean = withContext(Dispatchers.IO) {
+    hasHeader("location")
 }
 
-fun ChatRepository.createGetRoomContentRequest(token: String, roomId: Int): Connection {
-    val sourceroom = "https://www.xchat.cz/${token}/modchat?op=roomtopng&rid=${roomId}&js=1&skin=2"
-    val response = Jsoup.connect(sourceroom)
-        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.10240")
-        .method(Connection.Method.GET)
-        .timeout(15000)
-        .followRedirects(true)
-    return response
+suspend fun Connection.Response.getUserHashtag(): String = withContext(Dispatchers.IO) {
+    header("location")?.let { location ->
+        val start = location.indexOf("~").takeIf { it >= 0 } ?: return@withContext ""
+        val end = location.indexOf("/", start).takeIf { it > start } ?: location.length
+        location.substring(start, end)
+    } ?: ""
 }
+
+suspend fun Document.toRoomList(): List<Chatroom> = withContext(Dispatchers.IO) {
+    select("select#room > option")
+        .mapNotNull { option ->
+            val id = option.attr("value").takeIf { it.matches(Regex("\\d{6,8}")) }?.toIntOrNull()
+            val name = option.text().substringBefore(" (")
+            val count = option.text().substringAfterLast(" (").substringBeforeLast(")")
+            id?.let { Chatroom(it, name, count) }
+        }
+}
+
+suspend fun ChatRepository.createEnterRoomRequest(token: String, roomId: Int): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.TOKEN_ROOM_INTRO.replace("{token}", token) + "?rid=$roomId",
+        extraData = ChatApiConstants.ENTER_EXTRA_PARAMS + mapOf("rid" to roomId.toString())
+    )
+
+suspend fun ChatRepository.createGetRoomContentRequest(token: String, roomId: Int): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.ROOM_CONTENT_PATH.replace("{token}", token),
+        extraData = ChatApiConstants.COMMON_PARAMS + mapOf(
+            "op" to "roomtopng",
+            "rid" to roomId.toString()
+        )
+    )
 
 fun Connection.Response.getRoomHtmlString(): String {
     val doc: Document = parse()
@@ -83,19 +138,6 @@ fun Connection.Response.getRoomHtmlString(): String {
         output = URLDecoder.decode(output, "UTF-8")
         output = output.replace("\\\"", "\"")
         output = output.replace("href=\"https://redi.*?url=".toRegex(), Matcher.quoteReplacement("href=\""))
-        //       val patt = Pattern.compile("https://x.ximg.cz.*?gif")
-        //       val match = patt.matcher(output)
-//        while (match.find()) {
-//            val imageurl = match.group(0)
-//            val imageName = imageurl.substring(imageurl.lastIndexOf("/") + 1)
-//            val imagepath = arrayOfNulls<String>(1)
-//            imagepath[0] = "file://" + getFilesDir().getAbsolutePath().toString() + "/" + imageName
-//            output = output.replace(imageurl, imagepath[0])
-//            if (!File(getFilesDir().getAbsolutePath().toString() + "/" + imageName).exists()) {
-//                println(imageName + "does not exist")
-//                download_image(imageName, imageurl)
-//            }
-//        }
         output
     } catch (r: Exception) {
         r.printStackTrace()
@@ -103,50 +145,73 @@ fun Connection.Response.getRoomHtmlString(): String {
     }
 }
 
-fun ChatRepository.createRoomExitRequest(hash: String, roomId: Int): Connection {
-    val adr = "https://www.xchat.cz/$hash/modchat?op=mainframeset&menuaction=leave&leftroom=$roomId&js=1&skin=2&cid=16"
-    return Jsoup.connect(adr).timeout(15000)
+suspend fun ChatRepository.createRoomExitRequest(token: String, roomId: Int): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.ROOM_CONTENT_PATH.replace("{token}", token) +
+                ChatApiConstants.EXIT_ROOM_QUERY.replace("{roomId}", roomId.toString())
+    )
+
+suspend fun ChatRepository.createGetSendTokenRequest(roomId: Int, token: String): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.ROOM_CONTENT_PATH.replace("{token}", token) +
+                ChatApiConstants.SEND_TOKEN_QUERY.replace("{roomId}", roomId.toString())
+    )
+
+suspend fun ChatRepository.createSendMessageRequest(
+    message: String,
+    roomId: Int,
+    token: String,
+    sendToken: String
+): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.SEND_MESSAGE_PATH.replace("{token}", token),
+        method = Connection.Method.POST,
+        extraData = ChatApiConstants.SEND_MESSAGE_PARAMS + mapOf(
+            "rid" to roomId.toString(),
+            "wtkn" to sendToken,
+            "textarea" to message
+        ),
+        postCharset = ChatApiConstants.SEND_MESSAGE_CHARSET
+    )
+
+suspend fun ChatRepository.createGetUserListRequest(roomId: Int, token: String): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.ROOM_CONTENT_PATH.replace("{token}", token) +
+                ChatApiConstants.USER_LIST_QUERY.replace("{roomId}", roomId.toString())
+    )
+
+suspend fun Document.getUserList(): List<ChatUser> = withContext(Dispatchers.IO) {
+    getElementById("clist")?.select("p")
+        ?.map { element ->
+            val name = element.text().trim().takeIf { it.isNotEmpty() } ?: return@map null
+            val html = element.html().lowercase()
+            val sex = if (html.contains("muž")) Sex.MUZ else Sex.ZENA
+            ChatUser(name, sex)
+        }
+        ?.filterNotNull()
+        ?: emptyList()
 }
 
-fun ChatRepository.createGetSendTokenRequest(roomId: Int, token: String): Connection {
-    val url = "https://www.xchat.cz/$token/modchat?op=textpageng&skin=2&rid=$roomId&js=1"
-    return Jsoup.connect(url).timeout(15000)
-}
+suspend fun ChatRepository.createGetRoomInfoRequest(roomId: Int, token: String): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.ROOM_CONTENT_PATH.replace("{token}", token) +
+                ChatApiConstants.ROOM_INFO_QUERY.replace("{roomId}", roomId.toString())
+    )
 
-fun ChatRepository.createSendMessageRequest(message: String, roomId: Int, token: String, sendToken: String): Connection {
-    return Jsoup.connect("https://www.xchat.cz/$token/modchat")
-        .postDataCharset("ISO-8859-2")
-        .userAgent("Mozilla/5.0")
-        .timeout(15000)
-        .method(Connection.Method.POST)
-        .followRedirects(false)
-        .data("op", "textpageng")
-        .data("rid", roomId.toString())
-        .data("aid", "0")
-        .data("js", "1")
-        .data("skin", "2")
-        .data("wtkn", sendToken)
-        .data("textarea", message)
-        .data("target", "~")
-        .data("submit_text", "Poslat")
-}
+suspend fun ChatRepository.createLoginRequest(name: String, password: String): Connection.Response =
+    jsoupRequest(
+        path = ChatApiConstants.LOGIN_PATH,
+        method = Connection.Method.POST,
+        extraData = ChatApiConstants.COMMON_PARAMS + ChatApiConstants.LOGIN_EXTRA_PARAMS + mapOf(
+            "name" to name,
+            "pass" to password
+        ), followRedirects = false
+    )
 
-fun ChatRepository.createGetUserListRequest(roomId: Int, token: String): Connection {
-    val userpageadresa = "https://www.xchat.cz/${token}/modchat?op=userspage&amp;rid=${roomId}&amp;cid=16&amp;js=1&amp;skin=2"
-    return Jsoup.connect(userpageadresa).timeout(15000)
-}
+suspend fun ChatRepository.getGuestIndexDocument(): Document = jsoupRequest(
+    path = ChatApiConstants.GUEST_INDEX_PATH
+).parseDocument()
 
-fun Document.getUserList(): List<ChatUser> {
-    val userelem = getElementById("clist")
-    val userselemt = userelem.getElementsByTag("p")
-    return userselemt.map {
-        val name = it.text().trim()
-        val pohlavi = if (it.html().toLowerCase().contains("muž")) Sex.MUZ else Sex.ZENA
-        ChatUser(name, pohlavi)
-    }.toList()
-}
-
-fun ChatRepository.createGetRoomInfoRequest(roomId: Int, token: String): Connection {
-    val infoPageAddress = "https://www.xchat.cz/${token}/modchat?op=infopage&skin=2&rid=${roomId}"
-    return Jsoup.connect(infoPageAddress).timeout(15000)
+suspend fun Connection.Response.parseDocument(): Document = withContext(Dispatchers.IO) {
+    parse()  // Now safe: wrapped in IO
 }

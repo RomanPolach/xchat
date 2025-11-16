@@ -14,10 +14,12 @@ import com.example.xchat2.util.createGetUserListRequest
 import com.example.xchat2.util.createLoginRequest
 import com.example.xchat2.util.createRoomExitRequest
 import com.example.xchat2.util.createSendMessageRequest
+import com.example.xchat2.util.getGuestIndexDocument
 import com.example.xchat2.util.getRoomHtmlString
 import com.example.xchat2.util.getUserHashtag
 import com.example.xchat2.util.getUserList
-import com.example.xchat2.util.isSucessful
+import com.example.xchat2.util.isSuccessful
+import com.example.xchat2.util.parseDocument
 import com.example.xchat2.util.toRoomList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -26,7 +28,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.withContext
-import org.jsoup.Jsoup
+import kotlinx.coroutines.withTimeoutOrNull
+import org.jsoup.nodes.Document
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -70,12 +73,11 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
     private var sendToken: String = ""
 
     override suspend fun login(name: String, password: String): State<User> {
-        val response = createLoginRequest(name, password).execute()
-
-        if (response.isSucessful()) {
+        val response = createLoginRequest(name, password)
+        if (response.isSuccessful()) {
             val user = User(name, password, response.getUserHashtag())
             userDao.insertUser(user)
-            return State.Loaded(user) // Return the loaded user
+            return State.Loaded(user)
         } else {
             return State.Error(IllegalAccessError("Přihlášeni selhalo"))
         }
@@ -95,7 +97,6 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             }
         }
     }
-
 
     override suspend fun isUserLogged(): Boolean {
         return withContext(Dispatchers.IO) {
@@ -123,10 +124,9 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
             var lastException: IOException? = null
             repeat(3) { attempt ->
                 try {
-                    val page = Jsoup.connect("https://www.xchat.cz/~guest~/index.php")
-                        .timeout(10000)
-                        .get()
-                    return@withContext State.Loaded(page.toRoomList())
+                    val doc = withTimeoutOrNull(10000) { getGuestIndexDocument() }
+                        ?: throw SocketTimeoutException("Timeout fetching room list")
+                    return@withContext State.Loaded(doc.toRoomList())
                 } catch (e: IOException) {
                     lastException = e
                     if (attempt < 2) {
@@ -144,10 +144,9 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         return withContext(Dispatchers.IO) {
             try {
                 val user = userDao.getUser()
-                val response = createEnterRoomRequest(user!!.token, chatroom.id).execute()
-                val code = response.statusCode()
-                if (code == 200) {
-                    State.Loaded(data = Unit)
+                val response = createEnterRoomRequest(user!!.token, chatroom.id)
+                if (response.statusCode() == 200) {
+                    State.Loaded(Unit)
                 } else {
                     State.Error(IllegalAccessError("Nejde to"))
                 }
@@ -159,47 +158,42 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     override fun subscribeRoomContent(chatroom: Chatroom): Flow<State<String>> {
         return flow {
-            emit(Unit) // Emit immediately for the first load attempt
+            emit(Unit)
             while (true) {
-                // Reduce polling delay from 10 seconds to 3 seconds
                 delay(3000)
                 emit(Unit)
             }
         }
-            .mapLatest { // Use mapLatest to cancel previous requests if a new poll starts
-                val user = userDao.getUser() // Fetch user within mapLatest to get fresh data if needed
+            .mapLatest {
+                val user = userDao.getUser()
                 if (user == null) {
                     return@mapLatest State.Error(AnonymousUserException())
                 }
-            try {
-                // Consider adding timeouts to the OkHttpClient instance used here
-                val response = createGetRoomContentRequest(user.token, chatroom.id).execute()
-                if (response != null) {
+                try {
+                    // Consider adding timeouts to the OkHttpClient instance used here
+                    val response = createGetRoomContentRequest(user.token, chatroom.id)
                     val output = response.getRoomHtmlString()
                     // Basic validation - maybe needs improvement
                     if (output.length < 10) {
-                        State.Error(IllegalStateException("Invalid room content received")) // More specific error
+                        State.Error(IllegalStateException("Invalid room content received"))
                     } else {
                         State.Loaded(output)
                     }
-                } else {
-                    State.Error(IOException("Failed to fetch room content: null response")) // More specific error
+                } catch (e: SocketTimeoutException) {
+                    Log.w("ChatRepository", "Timeout fetching room content for ${chatroom.id}", e)
+                    State.Error(e)
+                } catch (e: UnknownHostException) {
+                    Log.w("ChatRepository", "Unknown host fetching room content for ${chatroom.id}", e)
+                    State.Error(e)
+                } catch (e: IOException) {
+                    Log.w("ChatRepository", "IOException fetching room content for ${chatroom.id}", e)
+                    State.Error(e)
+                } catch (e: Exception) {
+                    Log.e("ChatRepository", "Unexpected error fetching room content for ${chatroom.id}", e)
+                    State.Error(e)
                 }
-            } catch (e: SocketTimeoutException) {
-                Log.w("ChatRepository", "Timeout fetching room content for ${chatroom.id}", e)
-                State.Error(e) // Propagate timeout exception
-            } catch (e: UnknownHostException) {
-                Log.w("ChatRepository", "Unknown host fetching room content for ${chatroom.id}", e)
-                State.Error(e) // Propagate network exception
-            } catch (e: IOException) {
-                Log.w("ChatRepository", "IOException fetching room content for ${chatroom.id}", e)
-                State.Error(e) // Propagate other IO exceptions
-            } catch (e: Exception) {
-                Log.e("ChatRepository", "Unexpected error fetching room content for ${chatroom.id}", e)
-                State.Error(e) // Propagate unexpected errors
             }
-        }
-        .flowOn(Dispatchers.IO)
+            .flowOn(Dispatchers.IO)
     }
 
     override suspend fun fetchRoomContentOnce(chatroom: Chatroom): State<String> {
@@ -209,16 +203,12 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 return@withContext State.Error(AnonymousUserException())
             }
             try {
-                val response = createGetRoomContentRequest(user.token, chatroom.id).execute()
-                if (response != null) {
-                    val output = response.getRoomHtmlString()
-                    if (output.length < 10) {
-                        State.Error(IllegalStateException("Invalid room content received"))
-                    } else {
-                        State.Loaded(output)
-                    }
+                val response = createGetRoomContentRequest(user.token, chatroom.id)
+                val output = response.getRoomHtmlString()
+                if (output.length < 10) {
+                    State.Error(IllegalStateException("Invalid room content received"))
                 } else {
-                    State.Error(IOException("Failed to fetch room content: null response"))
+                    State.Loaded(output)
                 }
             } catch (e: SocketTimeoutException) {
                 Log.w("ChatRepository", "Timeout fetching room content (once) for ${chatroom.id}", e)
@@ -262,9 +252,10 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     override suspend fun getSendToken(roomId: Int) {
         val user = userDao.getUser()
-        user?.token?.let {
-            val response = createGetSendTokenRequest(roomId, it).get().toString()
-            sendToken = Regex("wtkn\" value=\"(.*?)[\"]").find(response)?.groupValues?.get(1) ?: ""
+        user?.token?.let { token ->
+            val response = createGetSendTokenRequest(roomId, token)
+            val pageString = response.parseDocument().toString()
+            sendToken = Regex("wtkn\" value=\"(.*?)[\"]").find(pageString)?.groupValues?.get(1) ?: ""
         }
     }
 
@@ -281,7 +272,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                     roomId = roomId,
                     token = user.token,
                     sendToken = sendToken
-                ).execute()
+                )
                 if (response.statusCode() == 200) {
                     State.Loaded(Unit)
                 } else {
@@ -300,12 +291,15 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 if (user == null) {
                     return@withContext State.Error(AnonymousUserException())
                 }
-                val userpage = createGetUserListRequest(roomId = roomId, token = user.token).get()
-                val roomInfoPage = createGetRoomInfoRequest(roomId = roomId, token = user.token).get()
-                val pageString = roomInfoPage.toString()
+                val userResponse = createGetUserListRequest(roomId = roomId, token = user.token)
+                val userpage: Document = userResponse.parse()
+                val infoResponse = createGetRoomInfoRequest(roomId = roomId, token = user.token)
+                val roomInfoPage: Document = infoResponse.parse()
+                val pageString = roomInfoPage.html()
                 val admin = Regex("strong id=\"admin\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
                 val idle = Regex("strong id=\"idle\">(.*?)</strong>").find(pageString)?.groupValues?.get(1)?.trim() ?: ""
-                val roomInfo = ChatBottomSheetState.RoomInfo(users = userpage.getUserList(), admin = admin, idleTime = idle)
+                val users = userpage.getUserList()
+                val roomInfo = ChatBottomSheetState.RoomInfo(users = users, admin = admin, idleTime = idle)
                 State.Loaded(roomInfo)
             } catch (e: Exception) {
                 State.Error(e)
@@ -317,8 +311,7 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
         return withContext(Dispatchers.IO) {
             try {
                 val user = userDao.getUser()
-                val exitRequest = createRoomExitRequest(user!!.token, selectedRoom.id)
-                val response = exitRequest.execute()
+                val response = createRoomExitRequest(user!!.token, selectedRoom.id)
                 if (response.statusCode() == 200) {
                     State.Loaded(Unit)
                 } else {
@@ -332,12 +325,14 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
 
     override suspend fun getRoomUsers(roomId: Int): List<String> {
         return withContext(Dispatchers.IO) {
-            val user = userDao.getUser()
-            if (user != null) {
-                createGetUserListRequest(roomId = roomId, token = user.token).get().getUserList().map {
-                    it.nickname
-                }
-            } else {
+            val user = userDao.getUser() // Early return
+
+            try {
+                val response = createGetUserListRequest(roomId = roomId, token = user!!.token)
+                val doc = response.parseDocument()
+                doc.getUserList().map { it.nickname }
+            } catch (e: Exception) {
+                Log.w("ChatRepository", "Failed to get room users for $roomId", e)
                 emptyList()
             }
         }

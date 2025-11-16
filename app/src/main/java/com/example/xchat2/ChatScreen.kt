@@ -117,11 +117,6 @@ fun ChatScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            webView.destroy()
-        }
-    }
 
     val uiState by viewModel.uiState.collectAsState()
     val roomContent = uiState.roomContent
