@@ -1,5 +1,7 @@
 package com.example.xchat2.ui.main
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.xchat2.ui.main.db.User
@@ -10,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MainViewModel(private val chatRepository: ChatRepository) : ViewModel() {
+class MainViewModel(private val chatRepository: ChatRepository) : ViewModel(), DefaultLifecycleObserver {
 
     private val _loginState = MutableStateFlow<State<User>>(State.Idle)
     val loginState: StateFlow<State<User>> = _loginState.asStateFlow()
@@ -21,7 +23,11 @@ class MainViewModel(private val chatRepository: ChatRepository) : ViewModel() {
         tryLoginWithSavedInfo()
     }
 
-    private fun tryLoginWithSavedInfo() {
+    override fun onStart(owner: LifecycleOwner) {
+        tryLoginWithSavedInfo()
+    }
+
+    fun tryLoginWithSavedInfo() {
         viewModelScope.launch {
             if (isLoggingIn) return@launch
             isLoggingIn = true

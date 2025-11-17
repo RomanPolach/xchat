@@ -88,13 +88,13 @@ suspend fun ChatRepository.jsoupRequest(
         .execute()
 }
 
-suspend fun Connection.Response.isSuccessful(): Boolean = withContext(Dispatchers.IO) {
-    hasHeader("location")
+fun Connection.Response.isSuccessful(): Boolean {
+    return hasHeader("location")
 }
 
-suspend fun Connection.Response.getUserHashtag(): String = withContext(Dispatchers.IO) {
-    header("location")?.let { location ->
-        val start = location.indexOf("~").takeIf { it >= 0 } ?: return@withContext ""
+fun Connection.Response.getUserHashtag(): String {
+    return header("location")?.let { location ->
+        val start = location.indexOf("~").takeIf { it >= 0 } ?: return ""
         val end = location.indexOf("/", start).takeIf { it > start } ?: location.length
         location.substring(start, end)
     } ?: ""
@@ -202,9 +202,12 @@ suspend fun ChatRepository.createLoginRequest(name: String, password: String): C
     jsoupRequest(
         path = ChatApiConstants.LOGIN_PATH,
         method = Connection.Method.POST,
-        extraData = ChatApiConstants.COMMON_PARAMS + ChatApiConstants.LOGIN_EXTRA_PARAMS + mapOf(
+        extraData = mapOf(
+            "js" to "1",
             "name" to name,
-            "pass" to password
+            "pass" to password,
+            "x" to "0",
+            "y" to "0"
         ), followRedirects = false
     )
 

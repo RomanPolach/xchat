@@ -73,13 +73,15 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
     private var sendToken: String = ""
 
     override suspend fun login(name: String, password: String): State<User> {
-        val response = createLoginRequest(name, password)
-        if (response.isSuccessful()) {
-            val user = User(name, password, response.getUserHashtag())
-            userDao.insertUser(user)
-            return State.Loaded(user)
-        } else {
-            return State.Error(IllegalAccessError("Přihlášeni selhalo"))
+        return withContext(Dispatchers.IO) {
+            val response = createLoginRequest(name, password)
+            if (response.isSuccessful()) {
+                val user = User(name, password, response.getUserHashtag())
+                userDao.insertUser(user)
+                State.Loaded(user)
+            } else {
+                State.Error(IllegalAccessError("Přihlášeni selhalo"))
+            }
         }
     }
 
@@ -170,26 +172,30 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                     return@mapLatest State.Error(AnonymousUserException())
                 }
                 try {
-                    // Consider adding timeouts to the OkHttpClient instance used here
-                    val response = createGetRoomContentRequest(user.token, chatroom.id)
-                    val output = response.getRoomHtmlString()
-                    // Basic validation - maybe needs improvement
+                    var response = createGetRoomContentRequest(user.token, chatroom.id)
+                    var output = response.getRoomHtmlString()
+                    
+                    // Check if token expired (empty string or very short response)
                     if (output.length < 10) {
-                        State.Error(IllegalStateException("Invalid room content received"))
-                    } else {
-                        State.Loaded(output)
+                        Log.w("ChatRepository", "Token expired detected for ${chatroom.id}, attempting relogin")
+                        val reloginResult = tryLoginWithSavedInfo()
+                        if (reloginResult !is State.Loaded) {
+                            throw IllegalStateException("Failed to relogin: ${(reloginResult as? State.Error)?.error?.message}")
+                        }
+                        val newUser = userDao.getUser() ?: throw IllegalStateException("Failed to get user after relogin")
+                        val enterResult = enterChatroom(chatroom)
+                        if (enterResult !is State.Loaded) {
+                            throw IllegalStateException("Failed to re-enter room after relogin")
+                        }
+                        response = createGetRoomContentRequest(newUser.token, chatroom.id)
+                        output = response.getRoomHtmlString()
+                        if (output.length < 10) {
+                            throw IllegalStateException("Invalid room content received after relogin")
+                        }
                     }
-                } catch (e: SocketTimeoutException) {
-                    Log.w("ChatRepository", "Timeout fetching room content for ${chatroom.id}", e)
-                    State.Error(e)
-                } catch (e: UnknownHostException) {
-                    Log.w("ChatRepository", "Unknown host fetching room content for ${chatroom.id}", e)
-                    State.Error(e)
-                } catch (e: IOException) {
-                    Log.w("ChatRepository", "IOException fetching room content for ${chatroom.id}", e)
-                    State.Error(e)
+                    State.Loaded(output)
                 } catch (e: Exception) {
-                    Log.e("ChatRepository", "Unexpected error fetching room content for ${chatroom.id}", e)
+                    Log.w("ChatRepository", "Error fetching room content for ${chatroom.id}", e)
                     State.Error(e)
                 }
             }
@@ -203,25 +209,31 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
                 return@withContext State.Error(AnonymousUserException())
             }
             try {
-                val response = createGetRoomContentRequest(user.token, chatroom.id)
-                val output = response.getRoomHtmlString()
+                var response = createGetRoomContentRequest(user.token, chatroom.id)
+                var output = response.getRoomHtmlString()
+                
+                // Check if token expired (empty string or very short response)
                 if (output.length < 10) {
-                    State.Error(IllegalStateException("Invalid room content received"))
-                } else {
-                    State.Loaded(output)
+                    Log.w("ChatRepository", "Token expired detected (once) for ${chatroom.id}, attempting relogin")
+                    val reloginResult = tryLoginWithSavedInfo()
+                    if (reloginResult !is State.Loaded) {
+                        throw IllegalStateException("Failed to relogin: ${(reloginResult as? State.Error)?.error?.message}")
+                    }
+                    val newUser = userDao.getUser() ?: throw IllegalStateException("Failed to get user after relogin")
+                    val enterResult = enterChatroom(chatroom)
+                    if (enterResult !is State.Loaded) {
+                        throw IllegalStateException("Failed to re-enter room after relogin")
+                    }
+                    response = createGetRoomContentRequest(newUser.token, chatroom.id)
+                    output = response.getRoomHtmlString()
+                    if (output.length < 10) {
+                        throw IllegalStateException("Invalid room content received after relogin")
+                    }
                 }
-            } catch (e: SocketTimeoutException) {
-                Log.w("ChatRepository", "Timeout fetching room content (once) for ${chatroom.id}", e)
-                State.Error(e)
-            } catch (e: UnknownHostException) {
-                Log.w("ChatRepository", "Unknown host fetching room content (once) for ${chatroom.id}", e)
-                State.Error(e)
-            } catch (e: IOException) {
-                Log.w("ChatRepository", "IOException fetching room content (once) for ${chatroom.id}", e)
-                State.Error(e)
+                State.Loaded(output)
             } catch (e: Exception) {
-                Log.e("ChatRepository", "Unexpected error fetching room content (once) for ${chatroom.id}", e)
-                State.Error(RuntimeException("Error during fetch: ${e.message}", e))
+                Log.w("ChatRepository", "Error fetching room content (once) for ${chatroom.id}", e)
+                State.Error(e)
             }
         }
     }
@@ -251,11 +263,13 @@ class ChatRepositoryImpl(val userDao: UserDao) : ChatRepository {
     }
 
     override suspend fun getSendToken(roomId: Int) {
-        val user = userDao.getUser()
-        user?.token?.let { token ->
-            val response = createGetSendTokenRequest(roomId, token)
-            val pageString = response.parseDocument().toString()
-            sendToken = Regex("wtkn\" value=\"(.*?)[\"]").find(pageString)?.groupValues?.get(1) ?: ""
+        withContext(Dispatchers.IO) {
+            val user = userDao.getUser()
+            user?.token?.let { token ->
+                val response = createGetSendTokenRequest(roomId, token)
+                val pageString = response.parseDocument().toString()
+                sendToken = Regex("wtkn\" value=\"(.*?)[\"]").find(pageString)?.groupValues?.get(1) ?: ""
+            }
         }
     }
 
